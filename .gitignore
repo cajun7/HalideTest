@@ -1,0 +1,27 @@
+# Android
+local.properties
+*.iml
+.idea/
+.gradle/
+build/
+app/build/
+.cxx/
+*.apk
+*.ap_
+*.dex
+
+# Halide SDK and generated artifacts
+halide/Halide-*/
+halide/bin/
+halide/generated/
+
+# OpenCV SDK
+opencv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Native build intermediates
+obj/
+libs/

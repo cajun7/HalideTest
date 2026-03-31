@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HalideTest</string>
+
+    <string-array name="operations">
+        <item>RGB to BGR</item>
+        <item>NV21 to RGB</item>
+        <item>Gaussian Blur (5x5)</item>
+        <item>Lens Blur (r=4)</item>
+        <item>Resize Bilinear (0.5x)</item>
+        <item>Resize Bicubic (0.5x)</item>
+        <item>Rotate 90</item>
+        <item>Rotate Arbitrary (45°)</item>
+        <item>RGB to NV21</item>
+        <item>Resize Area (0.5x)</item>
+        <item>Resize Letterbox (720p)</item>
+    </string-array>
+
+    <string-array name="resolutions">
+        <item>320x240</item>
+        <item>640x480</item>
+        <item>641x481</item>
+        <item>1280x720</item>
+        <item>1279x719</item>
+        <item>1920x1080</item>
+        <item>3840x2160</item>
+    </string-array>
+</resources>

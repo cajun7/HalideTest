@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Halide vs OpenCV Benchmark"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:paddingBottom="12dp" />
+
+        <!-- Operation selector -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Operation:"
+            android:textSize="14sp"
+            android:paddingBottom="4dp" />
+
+        <Spinner
+            android:id="@+id/spinnerOperation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:entries="@array/operations"
+            android:paddingBottom="8dp" />
+
+        <!-- Framework selector -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Framework:"
+            android:textSize="14sp"
+            android:paddingBottom="4dp" />
+
+        <RadioGroup
+            android:id="@+id/radioFramework"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingBottom="8dp">
+
+            <RadioButton
+                android:id="@+id/radioHalide"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Halide"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/radioOpenCV"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="OpenCV" />
+
+            <RadioButton
+                android:id="@+id/radioBoth"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Both" />
+        </RadioGroup>
+
+        <!-- Resolution selector -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Resolution:"
+            android:textSize="14sp"
+            android:paddingBottom="4dp" />
+
+        <Spinner
+            android:id="@+id/spinnerResolution"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:entries="@array/resolutions"
+            android:paddingBottom="8dp" />
+
+        <!-- Iteration count -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Iterations:"
+            android:textSize="14sp"
+            android:paddingBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editIterations"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:text="100"
+            android:paddingBottom="12dp" />
+
+        <!-- Run button -->
+        <Button
+            android:id="@+id/btnRun"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Run Benchmark"
+            android:textAllCaps="false"
+            android:paddingBottom="8dp" />
+
+        <!-- Run All button -->
+        <Button
+            android:id="@+id/btnRunAll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Run All Operations"
+            android:textAllCaps="false"
+            android:paddingBottom="12dp" />
+
+        <!-- Result display -->
+        <TextView
+            android:id="@+id/txtResult"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:text="Results will appear here..."
+            android:paddingBottom="12dp"
+            android:background="#F5F5F5"
+            android:padding="8dp" />
+
+        <!-- Output image preview -->
+        <ImageView
+            android:id="@+id/imgResult"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:scaleType="fitCenter"
+            android:background="#EEEEEE" />
+
+    </LinearLayout>
+</ScrollView>
