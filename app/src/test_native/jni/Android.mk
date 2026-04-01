@@ -5,8 +5,13 @@ LOCAL_PATH := $(call my-dir)
 # ---------------------------------------------------------------
 HALIDE_GEN_DIR := $(LOCAL_PATH)/../../../../halide/generated/arm64-v8a
 HALIDE_INCLUDE := $(LOCAL_PATH)/../../../../halide/Halide-18.0.0/include
-
 OPENCV_ANDROID_SDK := $(LOCAL_PATH)/../../../../opencv/OpenCV-android-sdk
+
+# ---------------------------------------------------------------
+# Import OpenCV as STATIC library.
+# OpenCV.mk calls CLEAR_VARS internally, so LOCAL_MODULE etc.
+# must be set AFTER this include. Use += to append to OpenCV's variables.
+# ---------------------------------------------------------------
 OPENCV_LIB_TYPE := STATIC
 OPENCV_INSTALL_MODULES := on
 include $(OPENCV_ANDROID_SDK)/sdk/native/jni/OpenCV.mk
@@ -14,7 +19,6 @@ include $(OPENCV_ANDROID_SDK)/sdk/native/jni/OpenCV.mk
 # ---------------------------------------------------------------
 # GoogleTest test executable
 # ---------------------------------------------------------------
-include $(CLEAR_VARS)
 LOCAL_MODULE := halide_tests
 
 LOCAL_SRC_FILES := \
@@ -26,16 +30,15 @@ LOCAL_SRC_FILES := \
     ../test_resize.cpp \
     ../test_rotate.cpp
 
-LOCAL_C_INCLUDES := \
+LOCAL_C_INCLUDES += \
     $(HALIDE_INCLUDE) \
     $(HALIDE_GEN_DIR) \
-    $(OPENCV_ANDROID_SDK)/sdk/native/jni/include \
     $(LOCAL_PATH)/..
 
-LOCAL_LDLIBS := -llog -lm
+LOCAL_LDLIBS += -llog -lm
 
 # Link all Halide AOT-generated static libraries
-LOCAL_LDFLAGS := \
+LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/rgb_bgr_convert.a \
     $(HALIDE_GEN_DIR)/nv21_to_rgb.a \
     $(HALIDE_GEN_DIR)/rgb_to_nv21.a \
@@ -51,7 +54,7 @@ LOCAL_LDFLAGS := \
 # GoogleTest requires RTTI
 LOCAL_CPP_FEATURES := rtti exceptions
 
-LOCAL_STATIC_LIBRARIES := googletest_main
+LOCAL_STATIC_LIBRARIES += googletest_main
 
 include $(BUILD_EXECUTABLE)
 
