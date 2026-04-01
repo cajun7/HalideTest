@@ -114,4 +114,42 @@ void resize_letterbox(const cv::Mat& input, cv::Mat& output, int target_w, int t
     resized.copyTo(output(cv::Rect(offset_x, offset_y, scaled_w, scaled_h)));
 }
 
+void flip_horizontal(const cv::Mat& input, cv::Mat& output) {
+    cv::flip(input, output, 1);  // flipCode > 0 = horizontal (flip around y-axis)
+}
+
+void flip_vertical(const cv::Mat& input, cv::Mat& output) {
+    cv::flip(input, output, 0);  // flipCode == 0 = vertical (flip around x-axis)
+}
+
+void nv21_rotate_flip_resize_rgb(const cv::Mat& nv21, cv::Mat& output,
+                                 int rotation_degrees_cw, int flip_code,
+                                 int target_w, int target_h, int interp) {
+    // Step 1: NV21 -> RGB
+    cv::Mat rgb;
+    cv::cvtColor(nv21, rgb, cv::COLOR_YUV2RGB_NV21);
+
+    // Step 2: Rotate
+    cv::Mat rotated;
+    switch (rotation_degrees_cw) {
+        case 90:  cv::rotate(rgb, rotated, cv::ROTATE_90_CLOCKWISE); break;
+        case 180: cv::rotate(rgb, rotated, cv::ROTATE_180); break;
+        case 270: cv::rotate(rgb, rotated, cv::ROTATE_90_COUNTERCLOCKWISE); break;
+        default:  rotated = rgb; break;
+    }
+
+    // Step 3: Flip
+    cv::Mat flipped;
+    if (flip_code == 1) {
+        cv::flip(rotated, flipped, 1);   // horizontal
+    } else if (flip_code == 2) {
+        cv::flip(rotated, flipped, 0);   // vertical
+    } else {
+        flipped = rotated;
+    }
+
+    // Step 4: Resize
+    cv::resize(flipped, output, cv::Size(target_w, target_h), 0, 0, interp);
+}
+
 } // namespace opencv_ops

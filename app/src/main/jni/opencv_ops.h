@@ -48,4 +48,15 @@ void resize_area(const cv::Mat& input, cv::Mat& output, int out_w, int out_h);
 // Letterbox resize (aspect-ratio-preserving with black padding)
 void resize_letterbox(const cv::Mat& input, cv::Mat& output, int target_w, int target_h);
 
+// Flip operations
+void flip_horizontal(const cv::Mat& input, cv::Mat& output);
+void flip_vertical(const cv::Mat& input, cv::Mat& output);
+
+// Fused NV21 -> Rotate -> Resize -> RGB (reference implementation using separate steps)
+// rotation_degrees_cw: 0, 90, 180, 270
+// flip_code: 0=none, 1=horizontal, 2=vertical
+void nv21_rotate_flip_resize_rgb(const cv::Mat& nv21, cv::Mat& output,
+                                 int rotation_degrees_cw, int flip_code,
+                                 int target_w, int target_h, int interp);
+
 } // namespace opencv_ops

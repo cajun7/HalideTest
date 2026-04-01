@@ -85,16 +85,35 @@ MULTI_TARGET_RUNS=(
     "lens_blur_generator -g lens_blur -f lens_blur"
     "resize_generator -g resize_bilinear -f resize_bilinear"
     "resize_generator -g resize_bicubic -f resize_bicubic"
+    "resize_generator -g resize_bilinear_target -f resize_bilinear_target"
+    "resize_generator -g resize_bicubic_target -f resize_bicubic_target"
     "rotate_generator -g rotate_arbitrary -f rotate_arbitrary"
     "rgb_to_nv21_generator -g rgb_to_nv21 -f rgb_to_nv21"
     "resize_area_generator -g resize_area -f resize_area"
+    "resize_area_generator -g resize_area_target -f resize_area_target"
     "resize_letterbox_generator -g resize_letterbox -f resize_letterbox"
+    # Fused NV21 pipeline — bilinear resize (4 rotation variants)
+    "nv21_pipeline_generator -g nv21_pipeline_bilinear -f nv21_pipeline_bilinear_none rotation_code=0"
+    "nv21_pipeline_generator -g nv21_pipeline_bilinear -f nv21_pipeline_bilinear_90cw rotation_code=1"
+    "nv21_pipeline_generator -g nv21_pipeline_bilinear -f nv21_pipeline_bilinear_180 rotation_code=2"
+    "nv21_pipeline_generator -g nv21_pipeline_bilinear -f nv21_pipeline_bilinear_270cw rotation_code=3"
+    # Fused NV21 pipeline — INTER_AREA resize (4 rotation variants)
+    "nv21_pipeline_generator -g nv21_pipeline_area -f nv21_pipeline_area_none rotation_code=0"
+    "nv21_pipeline_generator -g nv21_pipeline_area -f nv21_pipeline_area_90cw rotation_code=1"
+    "nv21_pipeline_generator -g nv21_pipeline_area -f nv21_pipeline_area_180 rotation_code=2"
+    "nv21_pipeline_generator -g nv21_pipeline_area -f nv21_pipeline_area_270cw rotation_code=3"
 )
 
 # Generators with no arithmetic benefit (pure index/channel remapping)
 SINGLE_TARGET_RUNS=(
     "rgb_bgr_generator -g rgb_bgr_convert -f rgb_bgr_convert"
-    "rotate_generator -g rotate_fixed -f rotate_fixed"
+    # Fixed rotations — all 3 variants (90CW, 180, 270CW)
+    "rotate_generator -g rotate_fixed -f rotate_fixed_90cw rotation_code=1"
+    "rotate_generator -g rotate_fixed -f rotate_fixed_180 rotation_code=2"
+    "rotate_generator -g rotate_fixed -f rotate_fixed_270cw rotation_code=3"
+    # Flip — horizontal and vertical
+    "flip_generator -g flip_fixed -f flip_horizontal flip_code=0"
+    "flip_generator -g flip_fixed -f flip_vertical flip_code=1"
 )
 
 for run in "${MULTI_TARGET_RUNS[@]}"; do

@@ -85,6 +85,50 @@ public class NativeBridge {
                                                boolean useHalide);
 
     /**
+     * Target-size bilinear resize (exact pixel dimensions).
+     * @return execution time in microseconds
+     */
+    public static native long resizeBilinearTarget(Bitmap inputBitmap, Bitmap outputBitmap,
+                                                    int targetWidth, int targetHeight,
+                                                    boolean useHalide);
+
+    /**
+     * Target-size bicubic resize (exact pixel dimensions).
+     * @return execution time in microseconds
+     */
+    public static native long resizeBicubicTarget(Bitmap inputBitmap, Bitmap outputBitmap,
+                                                   int targetWidth, int targetHeight,
+                                                   boolean useHalide);
+
+    /**
+     * Target-size INTER_AREA resize (exact pixel dimensions).
+     * @return execution time in microseconds
+     */
+    public static native long resizeAreaTarget(Bitmap inputBitmap, Bitmap outputBitmap,
+                                                int targetWidth, int targetHeight,
+                                                boolean useHalide);
+
+    /**
+     * Flip image horizontally or vertically.
+     * @param horizontal true for horizontal (mirror L-R), false for vertical (mirror T-B)
+     * @return execution time in microseconds
+     */
+    public static native long flip(Bitmap inputBitmap, Bitmap outputBitmap,
+                                    boolean horizontal, boolean useHalide);
+
+    /**
+     * Fused NV21 -> Rotate -> [Flip] -> Resize -> RGB pipeline.
+     * @param rotationDegreesCW 0, 90, 180, or 270
+     * @param flipCode 0=none, 1=horizontal, 2=vertical
+     * @param useArea true for INTER_AREA, false for bilinear
+     * @return execution time in microseconds
+     */
+    public static native long nv21RotateResizeRgb(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                   int rotationDegreesCW, int flipCode,
+                                                   int targetWidth, int targetHeight,
+                                                   boolean useArea, boolean useHalide);
+
+    /**
      * Append a CSV line to a file on device storage.
      */
     public static native void appendCsv(String filePath, String csvLine);

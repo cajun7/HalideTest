@@ -270,10 +270,12 @@ Java_com_example_halidetest_NativeBridge_rotate(
         float angle_rad = angleDegrees * 3.14159265358979f / 180.0f;
 
         // Use fixed rotation for exact multiples of 90
-        if (angleDegrees == 90.0f) {
+        if (angleDegrees == 90.0f || angleDegrees == 180.0f || angleDegrees == 270.0f) {
             auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
             auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), ow, oh, 3);
-            halide_ops::rotate_90(ibuf, obuf);
+            if (angleDegrees == 90.0f) halide_ops::rotate_90cw(ibuf, obuf);
+            else if (angleDegrees == 180.0f) halide_ops::rotate_180(ibuf, obuf);
+            else halide_ops::rotate_270cw(ibuf, obuf);
         } else {
             // rotate_arbitrary uses planar buffers (constant_exterior + interleaved has issues)
             Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
@@ -455,6 +457,230 @@ Java_com_example_halidetest_NativeBridge_resizeLetterbox(
     }
 
     auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// Target-size Resize (Bilinear)
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_resizeBilinearTarget(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+        halide_ops::resize_bilinear_target(ibuf, tw, th, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, tw, th);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_bgr, out_bgr;
+        cv::cvtColor(in_rgba, in_bgr, cv::COLOR_RGBA2BGR);
+        opencv_ops::resize_bilinear(in_bgr, out_bgr, tw, th);
+        cv::Mat out_rgba;
+        cv::cvtColor(out_bgr, out_rgba, cv::COLOR_BGR2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// Target-size Resize (Bicubic)
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_resizeBicubicTarget(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+        halide_ops::resize_bicubic_target(ibuf, tw, th, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, tw, th);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_bgr, out_bgr;
+        cv::cvtColor(in_rgba, in_bgr, cv::COLOR_RGBA2BGR);
+        opencv_ops::resize_bicubic(in_bgr, out_bgr, tw, th);
+        cv::Mat out_rgba;
+        cv::cvtColor(out_bgr, out_rgba, cv::COLOR_BGR2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// Target-size Resize (INTER_AREA)
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_resizeAreaTarget(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+        halide_ops::resize_area_target(ibuf, tw, th, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, tw, th);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_bgr, out_bgr;
+        cv::cvtColor(in_rgba, in_bgr, cv::COLOR_RGBA2BGR);
+        opencv_ops::resize_area(in_bgr, out_bgr, tw, th);
+        cv::Mat out_rgba;
+        cv::cvtColor(out_bgr, out_rgba, cv::COLOR_BGR2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// Flip (Horizontal / Vertical)
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_flip(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap,
+    jboolean horizontal, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+
+        if (horizontal) {
+            halide_ops::flip_horizontal(ibuf, obuf);
+        } else {
+            halide_ops::flip_vertical(ibuf, obuf);
+        }
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_bgr, out_bgr;
+        cv::cvtColor(in_rgba, in_bgr, cv::COLOR_RGBA2BGR);
+
+        if (horizontal) {
+            opencv_ops::flip_horizontal(in_bgr, out_bgr);
+        } else {
+            opencv_ops::flip_vertical(in_bgr, out_bgr);
+        }
+
+        cv::Mat out_rgba;
+        cv::cvtColor(out_bgr, out_rgba, cv::COLOR_BGR2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// Fused NV21 -> Rotate -> [Flip] -> Resize -> RGB Pipeline
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21RotateResizeRgb(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint rotationDegreesCW, jint flipCode, jint targetWidth, jint targetHeight,
+    jboolean useArea, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight;
+    int tw = targetWidth, th = targetHeight;
+
+    // Allocate output RGBA buffer
+    std::vector<uint8_t> rgba_out(tw * th * 4);
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        uint8_t* y_ptr = (uint8_t*)nv21_ptr;
+        uint8_t* uv_ptr = y_ptr + sw * sh;
+
+        Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+
+        // Interleaved RGB output
+        std::vector<uint8_t> rgb_out(tw * th * 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+
+        if (useArea) {
+            halide_ops::nv21_rotate_flip_resize_area_rgb(
+                y_buf, uv_buf, rotationDegreesCW, flipCode, tw, th, obuf);
+        } else {
+            halide_ops::nv21_rotate_flip_resize_rgb(
+                y_buf, uv_buf, rotationDegreesCW, flipCode, tw, th, obuf);
+        }
+
+        rgb_to_rgba(rgb_out.data(), rgba_out.data(), tw, th);
+    } else {
+        cv::Mat nv21_mat(sh + sh / 2, sw, CV_8UC1, (uint8_t*)nv21_ptr);
+        cv::Mat rgb_out;
+        int interp = useArea ? cv::INTER_AREA : cv::INTER_LINEAR;
+        opencv_ops::nv21_rotate_flip_resize_rgb(
+            nv21_mat, rgb_out, rotationDegreesCW, flipCode, tw, th, interp);
+        cv::Mat rgba_mat;
+        cv::cvtColor(rgb_out, rgba_mat, cv::COLOR_RGB2RGBA);
+        memcpy(rgba_out.data(), rgba_mat.data, tw * th * 4);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
     return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
 }
 

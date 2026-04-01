@@ -39,7 +39,21 @@ int resize_bicubic(Halide::Runtime::Buffer<uint8_t>& input,
                    float scale_x, float scale_y,
                    Halide::Runtime::Buffer<uint8_t>& output);
 
-// Fixed 90-degree CW rotation on 3-channel RGB
+// Fixed rotation — all directions
+int rotate_90cw(Halide::Runtime::Buffer<uint8_t>& input,
+                Halide::Runtime::Buffer<uint8_t>& output);
+int rotate_180(Halide::Runtime::Buffer<uint8_t>& input,
+               Halide::Runtime::Buffer<uint8_t>& output);
+int rotate_270cw(Halide::Runtime::Buffer<uint8_t>& input,
+                 Halide::Runtime::Buffer<uint8_t>& output);
+
+// Counter-clockwise rotation convenience aliases
+int rotate_90ccw(Halide::Runtime::Buffer<uint8_t>& input,
+                 Halide::Runtime::Buffer<uint8_t>& output);
+int rotate_270ccw(Halide::Runtime::Buffer<uint8_t>& input,
+                  Halide::Runtime::Buffer<uint8_t>& output);
+
+// Backward-compatible alias for rotate_90cw
 int rotate_90(Halide::Runtime::Buffer<uint8_t>& input,
               Halide::Runtime::Buffer<uint8_t>& output);
 
@@ -62,5 +76,55 @@ int resize_area(Halide::Runtime::Buffer<uint8_t>& input,
 int resize_letterbox(Halide::Runtime::Buffer<uint8_t>& input,
                      int target_w, int target_h,
                      Halide::Runtime::Buffer<uint8_t>& output);
+
+// Target-size resize APIs (exact pixel dimensions, no scale float)
+int resize_bilinear_target(Halide::Runtime::Buffer<uint8_t>& input,
+                           int target_w, int target_h,
+                           Halide::Runtime::Buffer<uint8_t>& output);
+
+int resize_bicubic_target(Halide::Runtime::Buffer<uint8_t>& input,
+                          int target_w, int target_h,
+                          Halide::Runtime::Buffer<uint8_t>& output);
+
+int resize_area_target(Halide::Runtime::Buffer<uint8_t>& input,
+                       int target_w, int target_h,
+                       Halide::Runtime::Buffer<uint8_t>& output);
+
+// Flip operations on 3-channel RGB
+int flip_horizontal(Halide::Runtime::Buffer<uint8_t>& input,
+                    Halide::Runtime::Buffer<uint8_t>& output);
+
+int flip_vertical(Halide::Runtime::Buffer<uint8_t>& input,
+                  Halide::Runtime::Buffer<uint8_t>& output);
+
+// Fused NV21 -> Rotate -> Resize (Bilinear) -> RGB pipeline
+// rotation_degrees_cw: 0, 90, 180, 270
+int nv21_rotate_resize_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                           Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                           int rotation_degrees_cw,
+                           int target_w, int target_h,
+                           Halide::Runtime::Buffer<uint8_t>& output);
+
+// Fused NV21 -> Rotate -> Flip -> Resize (Bilinear) -> RGB pipeline
+// flip_code: 0=none, 1=horizontal, 2=vertical
+int nv21_rotate_flip_resize_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                int rotation_degrees_cw, int flip_code,
+                                int target_w, int target_h,
+                                Halide::Runtime::Buffer<uint8_t>& output);
+
+// Fused NV21 -> Rotate -> Resize (INTER_AREA) -> RGB pipeline
+int nv21_rotate_resize_area_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                int rotation_degrees_cw,
+                                int target_w, int target_h,
+                                Halide::Runtime::Buffer<uint8_t>& output);
+
+// Fused NV21 -> Rotate -> Flip -> Resize (INTER_AREA) -> RGB pipeline
+int nv21_rotate_flip_resize_area_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                     Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                     int rotation_degrees_cw, int flip_code,
+                                     int target_w, int target_h,
+                                     Halide::Runtime::Buffer<uint8_t>& output);
 
 } // namespace halide_ops

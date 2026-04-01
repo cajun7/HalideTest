@@ -30,7 +30,10 @@ LOCAL_SRC_FILES := \
     ../test_gaussian_blur.cpp \
     ../test_lens_blur.cpp \
     ../test_resize.cpp \
+    ../test_resize_target.cpp \
     ../test_rotate.cpp \
+    ../test_flip.cpp \
+    ../test_fused_pipeline.cpp \
     ../test_target_dispatch.cpp
 
 LOCAL_C_INCLUDES += \
@@ -52,10 +55,25 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/lens_blur.a \
     $(HALIDE_GEN_DIR)/resize_bilinear.a \
     $(HALIDE_GEN_DIR)/resize_bicubic.a \
+    $(HALIDE_GEN_DIR)/resize_bilinear_target.a \
+    $(HALIDE_GEN_DIR)/resize_bicubic_target.a \
     $(HALIDE_GEN_DIR)/resize_area.a \
+    $(HALIDE_GEN_DIR)/resize_area_target.a \
     $(HALIDE_GEN_DIR)/resize_letterbox.a \
-    $(HALIDE_GEN_DIR)/rotate_fixed.a \
+    $(HALIDE_GEN_DIR)/rotate_fixed_90cw.a \
+    $(HALIDE_GEN_DIR)/rotate_fixed_180.a \
+    $(HALIDE_GEN_DIR)/rotate_fixed_270cw.a \
     $(HALIDE_GEN_DIR)/rotate_arbitrary.a \
+    $(HALIDE_GEN_DIR)/flip_horizontal.a \
+    $(HALIDE_GEN_DIR)/flip_vertical.a \
+    $(HALIDE_GEN_DIR)/nv21_pipeline_bilinear_none.a \
+    $(HALIDE_GEN_DIR)/nv21_pipeline_bilinear_90cw.a \
+    $(HALIDE_GEN_DIR)/nv21_pipeline_bilinear_180.a \
+    $(HALIDE_GEN_DIR)/nv21_pipeline_bilinear_270cw.a \
+    $(HALIDE_GEN_DIR)/nv21_pipeline_area_none.a \
+    $(HALIDE_GEN_DIR)/nv21_pipeline_area_90cw.a \
+    $(HALIDE_GEN_DIR)/nv21_pipeline_area_180.a \
+    $(HALIDE_GEN_DIR)/nv21_pipeline_area_270cw.a \
     $(HALIDE_GEN_DIR)/halide_runtime.a
 
 # GoogleTest requires RTTI
