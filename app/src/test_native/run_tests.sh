@@ -33,7 +33,7 @@ fi
 
 echo "Using NDK: ${NDK_ROOT}"
 
-OPENCV_VERSION="${OPENCV_VERSION:-4.9.0}"
+OPENCV_VERSION="${OPENCV_VERSION:-3.4.16}"
 echo "Using OpenCV: ${OPENCV_VERSION}"
 echo ""
 

@@ -16,6 +16,16 @@
             android:textSize="20sp"
             android:textStyle="bold"
             android:gravity="center"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/txtVersionInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Halide 21.0.0 | OpenCV 3.4.16"
+            android:textSize="13sp"
+            android:textColor="#666666"
+            android:gravity="center"
             android:paddingBottom="12dp" />
 
         <!-- Operation selector -->

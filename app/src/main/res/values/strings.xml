@@ -14,6 +14,13 @@
         <item>RGB to NV21</item>
         <item>Resize Area (0.5x)</item>
         <item>Resize Letterbox (720p)</item>
+        <item>Flip Horizontal</item>
+        <item>Flip Vertical</item>
+        <item>Resize Bilinear Target (720p)</item>
+        <item>Resize Bicubic Target (720p)</item>
+        <item>Resize Area Target (720p)</item>
+        <item>NV21 Pipeline Bilinear (rotate+resize)</item>
+        <item>NV21 Pipeline Area (rotate+resize)</item>
     </string-array>
 
     <string-array name="resolutions">

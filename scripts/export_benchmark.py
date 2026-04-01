@@ -13,13 +13,19 @@ import subprocess
 import csv
 import sys
 import os
-from collections import defaultdict, OrderedDict
+import re
+import math
+from collections import OrderedDict
+from datetime import datetime
 
 try:
     from openpyxl import Workbook
     from openpyxl.chart import BarChart, Reference
+    from openpyxl.chart.series import DataPoint
+    from openpyxl.chart.label import DataLabelList
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
+    from openpyxl.utils.cell import coordinate_from_string
 except ImportError:
     print("ERROR: openpyxl is required. Install with: pip3 install openpyxl")
     sys.exit(1)
@@ -33,6 +39,24 @@ HEADER_FILL = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="s
 HALIDE_FILL = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
 OPENCV_FILL = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
 SPEEDUP_FILL = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
+WINNER_HALIDE_FILL = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+WINNER_OPENCV_FILL = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+CATEGORY_FILL = PatternFill(start_color="D9E2F3", end_color="D9E2F3", fill_type="solid")
+
+# Heatmap gradient fills for speedup values
+HEAT_DARK_GREEN = PatternFill(start_color="00B050", end_color="00B050", fill_type="solid")
+HEAT_MED_GREEN = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
+HEAT_LIGHT_GREEN = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+HEAT_LIGHT_RED = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+HEAT_DARK_RED = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+
+TITLE_FONT = Font(name="Calibri", size=16, bold=True, color="1F4E79")
+SUBTITLE_FONT = Font(name="Calibri", size=12, bold=True, color="2E75B6")
+META_LABEL_FONT = Font(name="Calibri", size=11, bold=True, color="333333")
+META_VALUE_FONT = Font(name="Calibri", size=11, color="333333")
+CATEGORY_FONT = Font(name="Calibri", size=11, bold=True, color="1F4E79")
+BOLD_FONT = Font(name="Calibri", size=11, bold=True)
+
 THIN_BORDER = Border(
     left=Side(style="thin"),
     right=Side(style="thin"),
@@ -40,7 +64,23 @@ THIN_BORDER = Border(
     bottom=Side(style="thin"),
 )
 CENTER = Alignment(horizontal="center", vertical="center")
+LEFT = Alignment(horizontal="left", vertical="center")
 NUM_FMT = "#,##0"
+PCT_FMT = "0.0%"
+
+# Operation categories for heatmap grouping
+CATEGORIES = OrderedDict([
+    ("Color Conversion", ["RGB to BGR", "NV21 to RGB", "RGB to NV21"]),
+    ("Blur", ["Gaussian Blur (5x5)", "Lens Blur (r=4)"]),
+    ("Resize (Scale)", ["Resize Bilinear (0.5x)", "Resize Bicubic (0.5x)", "Resize Area (0.5x)",
+                        "Resize Letterbox (720p)"]),
+    ("Resize (Target)", ["Resize Bilinear Target (720p)", "Resize Bicubic Target (720p)",
+                         "Resize Area Target (720p)"]),
+    ("Rotate", ["Rotate 90", "Rotate Arbitrary (45\u00b0)"]),
+    ("Flip", ["Flip Horizontal", "Flip Vertical"]),
+    ("Fused Pipeline", ["NV21 Pipeline Bilinear (rotate+resize)",
+                        "NV21 Pipeline Area (rotate+resize)"]),
+])
 
 
 def pull_csv_from_device():
@@ -62,13 +102,29 @@ def pull_csv_from_device():
     return local_path
 
 
+def get_device_info():
+    """Query device model and manufacturer via adb. Returns dict."""
+    info = {"model": "Unknown", "manufacturer": "Unknown"}
+    for prop, key in [("ro.product.model", "model"),
+                      ("ro.product.manufacturer", "manufacturer")]:
+        try:
+            result = subprocess.run(
+                ["adb", "shell", "getprop", prop],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                info[key] = result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+    return info
+
+
 def read_csv(csv_path):
     """Read CSV into list of dicts. Auto-detect header or add one."""
     rows = []
     with open(csv_path, newline="") as f:
         sample = f.read(512)
         f.seek(0)
-        # Check if first line looks like a header
         if sample.startswith("operation"):
             reader = csv.DictReader(f)
         else:
@@ -82,6 +138,48 @@ def read_csv(csv_path):
         for row in reader:
             rows.append(row)
     return rows
+
+
+def compute_summary(rows):
+    """Group rows by (operation, resolution) and compute summary metrics."""
+    data = OrderedDict()
+    for row in rows:
+        key = (row.get("operation", ""), row.get("resolution", ""))
+        fw = row.get("framework", "")
+        if key not in data:
+            data[key] = {}
+        data[key][fw] = row
+
+    summary = []
+    for (op, res), frameworks in data.items():
+        h = frameworks.get("Halide", {})
+        o = frameworks.get("OpenCV", {})
+        h_med = int(h.get("median_us", 0))
+        o_med = int(o.get("median_us", 0))
+        h_mean = int(h.get("mean_us", 0))
+        o_mean = int(o.get("mean_us", 0))
+        speedup = o_med / h_med if h_med > 0 else 0
+
+        if h_med > 0 and o_med > 0:
+            diff_us = o_med - h_med  # positive = Halide faster
+            winner = "Halide" if diff_us > 0 else "OpenCV"
+            faster = min(h_med, o_med)
+            slower = max(h_med, o_med)
+            diff_pct = (slower - faster) / slower if slower > 0 else 0
+        else:
+            diff_us = 0
+            winner = "N/A"
+            diff_pct = 0
+
+        summary.append({
+            "op": op, "res": res,
+            "h_med": h_med, "o_med": o_med,
+            "h_mean": h_mean, "o_mean": o_mean,
+            "speedup": speedup,
+            "diff_us": diff_us, "diff_pct": diff_pct,
+            "winner": winner,
+        })
+    return summary
 
 
 def style_header_row(ws, ncols):
@@ -98,25 +196,398 @@ def auto_width(ws):
         max_len = 0
         col_letter = get_column_letter(col[0].column)
         for cell in col:
-            if cell.value:
+            if cell.value is not None:
                 max_len = max(max_len, len(str(cell.value)))
         ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
 
 
-def generate_excel(rows, output_path):
-    wb = Workbook()
+def speedup_fill(val):
+    """Return a fill color based on speedup value."""
+    if val >= 2.0:
+        return HEAT_DARK_GREEN
+    elif val >= 1.5:
+        return HEAT_MED_GREEN
+    elif val >= 1.0:
+        return HEAT_LIGHT_GREEN
+    elif val >= 0.75:
+        return HEAT_LIGHT_RED
+    else:
+        return HEAT_DARK_RED
 
-    # ------------------------------------------------------------------
-    # Sheet 1: Raw Data
-    # ------------------------------------------------------------------
-    ws_raw = wb.active
-    ws_raw.title = "Raw Data"
-    headers_raw = ["Operation", "Framework", "Resolution",
-                   "Median (us)", "Mean (us)", "Min (us)", "Max (us)", "Timestamp"]
-    ws_raw.append(headers_raw)
+
+def speedup_font(val):
+    """Return font for speedup cells (white text on dark backgrounds)."""
+    if val >= 2.0 or val < 0.75:
+        return Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    else:
+        return Font(name="Calibri", size=11, bold=True)
+
+
+# -----------------------------------------------------------------------
+# Sheet builders
+# -----------------------------------------------------------------------
+
+def build_dashboard(wb, summary, device_info):
+    """Sheet 1: Dashboard with metadata, winners table, and overall stats."""
+    ws = wb.active
+    ws.title = "Dashboard"
+    ws.sheet_properties.tabColor = "1F4E79"
+
+    # --- Title ---
+    ws.merge_cells("A1:H1")
+    title_cell = ws["A1"]
+    title_cell.value = "Halide vs OpenCV Benchmark Report"
+    title_cell.font = TITLE_FONT
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # --- Metadata ---
+    row = 3
+    meta = [
+        ("Device", device_info.get("model", "Unknown")),
+        ("Manufacturer", device_info.get("manufacturer", "Unknown")),
+        ("Test Date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        ("Halide Version", "21.0.0"),
+        ("OpenCV Version", "3.4.16"),
+        ("Total Operations", str(len(set(s["op"] for s in summary)))),
+    ]
+    for label, value in meta:
+        ws.cell(row=row, column=1, value=label).font = META_LABEL_FONT
+        ws.cell(row=row, column=2, value=value).font = META_VALUE_FONT
+        ws.cell(row=row, column=1).alignment = LEFT
+        ws.cell(row=row, column=2).alignment = LEFT
+        row += 1
+
+    # --- Overall stats ---
+    row += 1
+    ws.merge_cells(f"A{row}:H{row}")
+    ws.cell(row=row, column=1, value="Overall Performance Summary").font = SUBTITLE_FONT
+    row += 1
+
+    halide_wins = sum(1 for s in summary if s["winner"] == "Halide")
+    opencv_wins = sum(1 for s in summary if s["winner"] == "OpenCV")
+    speedups = [s["speedup"] for s in summary if s["speedup"] > 0]
+    geo_mean = math.exp(sum(math.log(s) for s in speedups) / len(speedups)) if speedups else 0
+
+    stats = [
+        ("Halide Wins", halide_wins, WINNER_HALIDE_FILL),
+        ("OpenCV Wins", opencv_wins, WINNER_OPENCV_FILL),
+        ("Avg Speedup (geometric mean)", f"{geo_mean:.2f}x", SPEEDUP_FILL),
+    ]
+    for label, value, fill in stats:
+        ws.cell(row=row, column=1, value=label).font = META_LABEL_FONT
+        c = ws.cell(row=row, column=2, value=value)
+        c.font = BOLD_FONT
+        c.fill = fill
+        c.alignment = CENTER
+        c.border = THIN_BORDER
+        row += 1
+
+    # --- Winners table ---
+    row += 1
+    ws.merge_cells(f"A{row}:H{row}")
+    ws.cell(row=row, column=1, value="Performance Comparison by Operation").font = SUBTITLE_FONT
+    row += 1
+
+    headers = ["Operation", "Resolution", "Halide (us)", "OpenCV (us)",
+               "Winner", "Diff (us)", "Diff (%)", "Speedup"]
+    for ci, h in enumerate(headers, 1):
+        c = ws.cell(row=row, column=ci, value=h)
+        c.font = HEADER_FONT
+        c.fill = HEADER_FILL
+        c.alignment = CENTER
+        c.border = THIN_BORDER
+    row += 1
+
+    for s in summary:
+        ws.cell(row=row, column=1, value=s["op"]).border = THIN_BORDER
+        ws.cell(row=row, column=2, value=s["res"]).border = THIN_BORDER
+        ws.cell(row=row, column=2).alignment = CENTER
+
+        ch = ws.cell(row=row, column=3, value=s["h_med"])
+        ch.number_format = NUM_FMT
+        ch.fill = HALIDE_FILL
+        ch.alignment = CENTER
+        ch.border = THIN_BORDER
+
+        co = ws.cell(row=row, column=4, value=s["o_med"])
+        co.number_format = NUM_FMT
+        co.fill = OPENCV_FILL
+        co.alignment = CENTER
+        co.border = THIN_BORDER
+
+        cw = ws.cell(row=row, column=5, value=s["winner"])
+        cw.fill = WINNER_HALIDE_FILL if s["winner"] == "Halide" else WINNER_OPENCV_FILL
+        cw.font = BOLD_FONT
+        cw.alignment = CENTER
+        cw.border = THIN_BORDER
+
+        cd = ws.cell(row=row, column=6, value=abs(s["diff_us"]))
+        cd.number_format = NUM_FMT
+        cd.alignment = CENTER
+        cd.border = THIN_BORDER
+
+        cp = ws.cell(row=row, column=7, value=s["diff_pct"])
+        cp.number_format = PCT_FMT
+        cp.alignment = CENTER
+        cp.border = THIN_BORDER
+
+        cs = ws.cell(row=row, column=8, value=f"{s['speedup']:.2f}x")
+        cs.fill = SPEEDUP_FILL
+        cs.alignment = CENTER
+        cs.border = THIN_BORDER
+
+        row += 1
+
+    auto_width(ws)
+    ws.column_dimensions["A"].width = 38
+
+
+def build_summary(wb, summary):
+    """Sheet 2: Enhanced summary pivot table."""
+    ws = wb.create_sheet("Summary")
+    ws.sheet_properties.tabColor = "2E75B6"
+
+    headers = ["Operation", "Resolution",
+               "Halide Median (us)", "OpenCV Median (us)",
+               "Diff (us)", "Diff (%)",
+               "Halide Mean (us)", "OpenCV Mean (us)",
+               "Speedup (median)", "Winner"]
+    ws.append(headers)
+    style_header_row(ws, len(headers))
+
+    for s in summary:
+        ws.append([
+            s["op"], s["res"],
+            s["h_med"], s["o_med"],
+            abs(s["diff_us"]), s["diff_pct"],
+            s["h_mean"], s["o_mean"],
+            f"{s['speedup']:.2f}x", s["winner"],
+        ])
+
+    for r_idx in range(2, ws.max_row + 1):
+        for c_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=r_idx, column=c_idx)
+            cell.border = THIN_BORDER
+            if c_idx in (3, 5, 7):  # Halide columns + diff
+                cell.number_format = NUM_FMT
+                cell.alignment = CENTER
+            if c_idx in (4, 8):  # OpenCV columns
+                cell.number_format = NUM_FMT
+                cell.alignment = CENTER
+            if c_idx == 3:
+                cell.fill = HALIDE_FILL
+            elif c_idx == 4:
+                cell.fill = OPENCV_FILL
+            elif c_idx == 5:
+                cell.alignment = CENTER
+            elif c_idx == 6:
+                cell.number_format = PCT_FMT
+                cell.alignment = CENTER
+            elif c_idx == 7:
+                cell.fill = HALIDE_FILL
+            elif c_idx == 8:
+                cell.fill = OPENCV_FILL
+            elif c_idx == 9:
+                cell.fill = SPEEDUP_FILL
+                cell.alignment = CENTER
+                # Bold if speedup > 2.0
+                try:
+                    val = float(str(cell.value).replace("x", ""))
+                    if val > 2.0:
+                        cell.font = BOLD_FONT
+                except (ValueError, TypeError):
+                    pass
+            elif c_idx == 10:
+                winner = cell.value
+                cell.fill = WINNER_HALIDE_FILL if winner == "Halide" else WINNER_OPENCV_FILL
+                cell.font = BOLD_FONT
+                cell.alignment = CENTER
+
+    auto_width(ws)
+    ws.column_dimensions["A"].width = 38
+
+
+def build_heatmap(wb, summary):
+    """Sheet 3: Operations grouped by category with color-coded speedup."""
+    ws = wb.create_sheet("Heatmap")
+    ws.sheet_properties.tabColor = "00B050"
+
+    row = 1
+    # Build lookup from summary
+    lookup = {}
+    for s in summary:
+        lookup.setdefault(s["op"], []).append(s)
+
+    for cat_name, ops in CATEGORIES.items():
+        # Category header
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+        cat_cell = ws.cell(row=row, column=1, value=cat_name)
+        cat_cell.font = CATEGORY_FONT
+        cat_cell.fill = CATEGORY_FILL
+        cat_cell.alignment = LEFT
+        cat_cell.border = THIN_BORDER
+        for ci in range(2, 7):
+            ws.cell(row=row, column=ci).fill = CATEGORY_FILL
+            ws.cell(row=row, column=ci).border = THIN_BORDER
+        row += 1
+
+        # Sub-header
+        sub_headers = ["Operation", "Resolution", "Halide (us)", "OpenCV (us)",
+                       "Speedup", "Winner"]
+        for ci, h in enumerate(sub_headers, 1):
+            c = ws.cell(row=row, column=ci, value=h)
+            c.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+            c.fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
+            c.alignment = CENTER
+            c.border = THIN_BORDER
+        row += 1
+
+        # Data rows for each operation in this category
+        found_any = False
+        for op_name in ops:
+            entries = lookup.get(op_name, [])
+            for s in entries:
+                found_any = True
+                ws.cell(row=row, column=1, value=s["op"]).border = THIN_BORDER
+                ws.cell(row=row, column=2, value=s["res"]).border = THIN_BORDER
+                ws.cell(row=row, column=2).alignment = CENTER
+
+                ch = ws.cell(row=row, column=3, value=s["h_med"])
+                ch.number_format = NUM_FMT
+                ch.fill = HALIDE_FILL
+                ch.alignment = CENTER
+                ch.border = THIN_BORDER
+
+                co = ws.cell(row=row, column=4, value=s["o_med"])
+                co.number_format = NUM_FMT
+                co.fill = OPENCV_FILL
+                co.alignment = CENTER
+                co.border = THIN_BORDER
+
+                sp_val = s["speedup"]
+                cs = ws.cell(row=row, column=5, value=f"{sp_val:.2f}x")
+                cs.fill = speedup_fill(sp_val)
+                cs.font = speedup_font(sp_val)
+                cs.alignment = CENTER
+                cs.border = THIN_BORDER
+
+                cw = ws.cell(row=row, column=6, value=s["winner"])
+                cw.fill = WINNER_HALIDE_FILL if s["winner"] == "Halide" else WINNER_OPENCV_FILL
+                cw.font = BOLD_FONT
+                cw.alignment = CENTER
+                cw.border = THIN_BORDER
+
+                row += 1
+
+        if not found_any:
+            ws.cell(row=row, column=1, value="(no data)").border = THIN_BORDER
+            row += 1
+
+        # Blank separator row
+        row += 1
+
+    auto_width(ws)
+    ws.column_dimensions["A"].width = 38
+
+
+def build_charts(wb, summary):
+    """Sheet 4: Charts with median comparison and speedup factor."""
+    ws = wb.create_sheet("Charts")
+    ws.sheet_properties.tabColor = "ED7D31"
+
+    if not summary:
+        ws.cell(row=1, column=1, value="No data available for charts.")
+        return
+
+    # --- Helper data area (columns J-N) for chart data ---
+    # Write labels and data for the charts
+    ws.cell(row=1, column=10, value="Operation")
+    ws.cell(row=1, column=11, value="Halide Median (us)")
+    ws.cell(row=1, column=12, value="OpenCV Median (us)")
+    ws.cell(row=1, column=13, value="Speedup")
+    ws.cell(row=1, column=14, value="Reference (1.0x)")
+
+    for i, s in enumerate(summary):
+        r = i + 2
+        label = s["op"]
+        if s["res"]:
+            label += f"\n({s['res']})"
+        ws.cell(row=r, column=10, value=s["op"])
+        ws.cell(row=r, column=11, value=s["h_med"])
+        ws.cell(row=r, column=12, value=s["o_med"])
+        ws.cell(row=r, column=13, value=round(s["speedup"], 2))
+        ws.cell(row=r, column=14, value=1.0)
+
+    nrows = len(summary) + 1
+
+    # --- Chart 1: Median comparison (grouped bar) ---
+    chart1 = BarChart()
+    chart1.type = "col"
+    chart1.grouping = "clustered"
+    chart1.title = "Halide vs OpenCV - Median Execution Time"
+    chart1.y_axis.title = "Time (microseconds)"
+    chart1.x_axis.title = "Operation"
+    chart1.style = 10
+    chart1.width = 32
+    chart1.height = 16
+
+    halide_data = Reference(ws, min_col=11, min_row=1, max_row=nrows)
+    opencv_data = Reference(ws, min_col=12, min_row=1, max_row=nrows)
+    cats = Reference(ws, min_col=10, min_row=2, max_row=nrows)
+
+    chart1.add_data(halide_data, titles_from_data=True)
+    chart1.add_data(opencv_data, titles_from_data=True)
+    chart1.set_categories(cats)
+
+    chart1.series[0].graphicalProperties.solidFill = "70AD47"  # Green for Halide
+    chart1.series[1].graphicalProperties.solidFill = "ED7D31"  # Orange for OpenCV
+
+    # Rotate x-axis labels for readability
+    chart1.x_axis.tickLblPos = "low"
+    chart1.x_axis.txPr = None  # Let Excel auto-rotate
+
+    ws.add_chart(chart1, "A1")
+
+    # --- Chart 2: Speedup factor with 1.0x reference line ---
+    chart2 = BarChart()
+    chart2.type = "col"
+    chart2.title = "Speedup Factor (OpenCV / Halide)"
+    chart2.y_axis.title = "Speedup (x)"
+    chart2.style = 10
+    chart2.width = 32
+    chart2.height = 16
+
+    speedup_data = Reference(ws, min_col=13, min_row=1, max_row=nrows)
+    speedup_cats = Reference(ws, min_col=10, min_row=2, max_row=nrows)
+    chart2.add_data(speedup_data, titles_from_data=True)
+    chart2.set_categories(speedup_cats)
+    chart2.series[0].graphicalProperties.solidFill = "4472C4"
+
+    # Add 1.0x reference line as a second series
+    from openpyxl.chart import LineChart
+    line = LineChart()
+    ref_data = Reference(ws, min_col=14, min_row=1, max_row=nrows)
+    line.add_data(ref_data, titles_from_data=True)
+    line.series[0].graphicalProperties.line.solidFill = "FF0000"
+    line.series[0].graphicalProperties.line.width = 20000  # EMUs (~2pt)
+    line.series[0].graphicalProperties.noFill = True
+    # Combine bar + line
+    chart2 += line
+
+    ws.add_chart(chart2, "A18")
+
+
+def build_raw_data(wb, rows):
+    """Sheet 5: Raw data (all CSV entries)."""
+    ws = wb.create_sheet("Raw Data")
+    ws.sheet_properties.tabColor = "A5A5A5"
+
+    headers = ["Operation", "Framework", "Resolution",
+               "Median (us)", "Mean (us)", "Min (us)", "Max (us)", "Timestamp"]
+    ws.append(headers)
 
     for row in rows:
-        ws_raw.append([
+        ws.append([
             row.get("operation", ""),
             row.get("framework", ""),
             row.get("resolution", ""),
@@ -127,133 +598,35 @@ def generate_excel(rows, output_path):
             row.get("timestamp", ""),
         ])
 
-    style_header_row(ws_raw, len(headers_raw))
+    style_header_row(ws, len(headers))
 
-    # Apply number format and alternating row fill
-    for r_idx in range(2, ws_raw.max_row + 1):
-        fw = ws_raw.cell(row=r_idx, column=2).value
+    for r_idx in range(2, ws.max_row + 1):
+        fw = ws.cell(row=r_idx, column=2).value
         fill = HALIDE_FILL if fw == "Halide" else OPENCV_FILL
-        for c_idx in range(1, len(headers_raw) + 1):
-            cell = ws_raw.cell(row=r_idx, column=c_idx)
+        for c_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=r_idx, column=c_idx)
             cell.border = THIN_BORDER
             cell.fill = fill
             if 4 <= c_idx <= 7:
                 cell.number_format = NUM_FMT
                 cell.alignment = CENTER
 
-    auto_width(ws_raw)
+    auto_width(ws)
 
-    # ------------------------------------------------------------------
-    # Sheet 2: Summary (pivot table)
-    # ------------------------------------------------------------------
-    ws_summary = wb.create_sheet("Summary")
-    headers_sum = ["Operation", "Resolution",
-                   "Halide Median (us)", "OpenCV Median (us)",
-                   "Halide Mean (us)", "OpenCV Mean (us)",
-                   "Speedup (median)"]
-    ws_summary.append(headers_sum)
 
-    # Group by (operation, resolution), latest entry wins
-    data = OrderedDict()
-    for row in rows:
-        key = (row.get("operation", ""), row.get("resolution", ""))
-        fw = row.get("framework", "")
-        if key not in data:
-            data[key] = {}
-        data[key][fw] = row
+# -----------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------
 
-    summary_rows = []
-    for (op, res), frameworks in data.items():
-        h = frameworks.get("Halide", {})
-        o = frameworks.get("OpenCV", {})
-        h_med = int(h.get("median_us", 0))
-        o_med = int(o.get("median_us", 0))
-        h_mean = int(h.get("mean_us", 0))
-        o_mean = int(o.get("mean_us", 0))
-        speedup = o_med / h_med if h_med > 0 else 0
-        summary_rows.append([op, res, h_med, o_med, h_mean, o_mean, speedup])
-        ws_summary.append([op, res, h_med, o_med, h_mean, o_mean, f"{speedup:.2f}x"])
+def generate_excel(rows, output_path, device_info):
+    summary = compute_summary(rows)
+    wb = Workbook()
 
-    style_header_row(ws_summary, len(headers_sum))
-
-    for r_idx in range(2, ws_summary.max_row + 1):
-        for c_idx in range(1, len(headers_sum) + 1):
-            cell = ws_summary.cell(row=r_idx, column=c_idx)
-            cell.border = THIN_BORDER
-            if 3 <= c_idx <= 6:
-                cell.number_format = NUM_FMT
-                cell.alignment = CENTER
-            if c_idx == 3:
-                cell.fill = HALIDE_FILL
-            elif c_idx == 4:
-                cell.fill = OPENCV_FILL
-            elif c_idx == 5:
-                cell.fill = HALIDE_FILL
-            elif c_idx == 6:
-                cell.fill = OPENCV_FILL
-            elif c_idx == 7:
-                cell.fill = SPEEDUP_FILL
-                cell.alignment = CENTER
-
-    auto_width(ws_summary)
-
-    # ------------------------------------------------------------------
-    # Sheet 3: Charts
-    # ------------------------------------------------------------------
-    ws_chart = wb.create_sheet("Charts")
-
-    if len(summary_rows) > 0:
-        # Chart 1: Median comparison (grouped bar)
-        chart1 = BarChart()
-        chart1.type = "col"
-        chart1.grouping = "clustered"
-        chart1.title = "Halide vs OpenCV - Median Execution Time"
-        chart1.y_axis.title = "Time (microseconds)"
-        chart1.x_axis.title = "Operation"
-        chart1.style = 10
-        chart1.width = 25
-        chart1.height = 15
-
-        nrows = len(summary_rows) + 1  # +1 for header
-
-        # Halide median = column 3, OpenCV median = column 4
-        halide_data = Reference(ws_summary, min_col=3, min_row=1, max_row=nrows)
-        opencv_data = Reference(ws_summary, min_col=4, min_row=1, max_row=nrows)
-        cats = Reference(ws_summary, min_col=1, min_row=2, max_row=nrows)
-
-        chart1.add_data(halide_data, titles_from_data=True)
-        chart1.add_data(opencv_data, titles_from_data=True)
-        chart1.set_categories(cats)
-
-        # Color the series
-        chart1.series[0].graphicalProperties.solidFill = "70AD47"  # Green for Halide
-        chart1.series[1].graphicalProperties.solidFill = "ED7D31"  # Orange for OpenCV
-
-        ws_chart.add_chart(chart1, "A1")
-
-        # Chart 2: Speedup factor
-        chart2 = BarChart()
-        chart2.type = "col"
-        chart2.title = "Speedup Factor (OpenCV / Halide)"
-        chart2.y_axis.title = "Speedup (x)"
-        chart2.style = 10
-        chart2.width = 25
-        chart2.height = 15
-
-        # Write speedup data to a helper area in the chart sheet
-        ws_chart.cell(row=1, column=10, value="Operation")
-        ws_chart.cell(row=1, column=11, value="Speedup")
-        for i, sr in enumerate(summary_rows):
-            ws_chart.cell(row=i + 2, column=10, value=sr[0])
-            ws_chart.cell(row=i + 2, column=11, value=sr[6])
-
-        speedup_data = Reference(ws_chart, min_col=11, min_row=1, max_row=len(summary_rows) + 1)
-        speedup_cats = Reference(ws_chart, min_col=10, min_row=2, max_row=len(summary_rows) + 1)
-        chart2.add_data(speedup_data, titles_from_data=True)
-        chart2.set_categories(speedup_cats)
-        chart2.series[0].graphicalProperties.solidFill = "4472C4"
-
-        ws_chart.add_chart(chart2, "A18")
+    build_dashboard(wb, summary, device_info)
+    build_summary(wb, summary)
+    build_heatmap(wb, summary)
+    build_charts(wb, summary)
+    build_raw_data(wb, rows)
 
     wb.save(output_path)
     print(f"Report saved to: {output_path}")
@@ -262,19 +635,34 @@ def generate_excel(rows, output_path):
 def main():
     args = sys.argv[1:]
     csv_path = None
-    output_path = "benchmark_report.xlsx"
+    output_path = None
+    has_device = True
 
     i = 0
     while i < len(args):
         if args[i] == "--csv" and i + 1 < len(args):
             csv_path = args[i + 1]
+            has_device = False
             i += 2
         else:
             output_path = args[i]
             i += 1
 
+    # Get device info (for filename and dashboard)
+    if has_device:
+        device_info = get_device_info()
+    else:
+        device_info = {"model": "Unknown", "manufacturer": "Unknown"}
+
+    # Pull CSV if needed
     if csv_path is None:
         csv_path = pull_csv_from_device()
+
+    # Generate dynamic filename if not specified
+    if output_path is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_safe = re.sub(r"[^\w\-]", "_", device_info["model"])
+        output_path = f"benchmark_{model_safe}_{timestamp}.xlsx"
 
     if not os.path.exists(csv_path):
         print(f"ERROR: CSV file not found: {csv_path}")
@@ -286,7 +674,7 @@ def main():
         sys.exit(1)
 
     print(f"Read {len(rows)} benchmark entries.")
-    generate_excel(rows, output_path)
+    generate_excel(rows, output_path, device_info)
 
 
 if __name__ == "__main__":

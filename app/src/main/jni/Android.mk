@@ -5,7 +5,7 @@ LOCAL_PATH := $(call my-dir)
 # ---------------------------------------------------------------
 HALIDE_GEN_DIR := $(LOCAL_PATH)/../../../../halide/generated/arm64-v8a
 HALIDE_INCLUDE := $(LOCAL_PATH)/../../../../halide/Halide-21.0.0/include
-OPENCV_VERSION ?= 4.9.0
+OPENCV_VERSION ?= 3.4.16
 OPENCV_ANDROID_SDK := $(LOCAL_PATH)/../../../../opencv/$(OPENCV_VERSION)/OpenCV-android-sdk
 
 # ---------------------------------------------------------------

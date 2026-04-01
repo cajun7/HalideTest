@@ -29,6 +29,7 @@ public class MainActivity extends AppCompatActivity {
     private Button btnRun;
     private Button btnRunAll;
     private TextView txtResult;
+    private TextView txtVersionInfo;
     private ImageView imgResult;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -48,7 +49,10 @@ public class MainActivity extends AppCompatActivity {
         btnRun = findViewById(R.id.btnRun);
         btnRunAll = findViewById(R.id.btnRunAll);
         txtResult = findViewById(R.id.txtResult);
+        txtVersionInfo = findViewById(R.id.txtVersionInfo);
         imgResult = findViewById(R.id.imgResult);
+
+        txtVersionInfo.setText("Halide 21.0.0 | OpenCV 3.4.16");
 
         // CSV file in app's external files directory
         File dir = getExternalFilesDir(null);
@@ -213,6 +217,46 @@ public class MainActivity extends AppCompatActivity {
                 int tw = 1280, th = 720;
                 Bitmap outputBitmap = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888);
                 op = (halide) -> NativeBridge.resizeLetterbox(inputBitmap, outputBitmap, tw, th, halide);
+                break;
+            }
+            case "Flip Horizontal": {
+                Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.flip(inputBitmap, outputBitmap, true, halide);
+                break;
+            }
+            case "Flip Vertical": {
+                Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.flip(inputBitmap, outputBitmap, false, halide);
+                break;
+            }
+            case "Resize Bilinear Target (720p)": {
+                int tw = 1280, th = 720;
+                Bitmap outputBitmap = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.resizeBilinearTarget(inputBitmap, outputBitmap, tw, th, halide);
+                break;
+            }
+            case "Resize Bicubic Target (720p)": {
+                int tw = 1280, th = 720;
+                Bitmap outputBitmap = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.resizeBicubicTarget(inputBitmap, outputBitmap, tw, th, halide);
+                break;
+            }
+            case "Resize Area Target (720p)": {
+                int tw = 1280, th = 720;
+                Bitmap outputBitmap = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.resizeAreaTarget(inputBitmap, outputBitmap, tw, th, halide);
+                break;
+            }
+            case "NV21 Pipeline Bilinear (rotate+resize)": {
+                byte[] nv21 = createTestNv21(width, height);
+                op = (halide) -> NativeBridge.nv21RotateResizeRgb(nv21, width, height,
+                        90, 0, 1280, 720, false, halide);
+                break;
+            }
+            case "NV21 Pipeline Area (rotate+resize)": {
+                byte[] nv21 = createTestNv21(width, height);
+                op = (halide) -> NativeBridge.nv21RotateResizeRgb(nv21, width, height,
+                        90, 0, 1280, 720, true, halide);
                 break;
             }
             default: {

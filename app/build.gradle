@@ -18,7 +18,7 @@ android {
 
         externalNativeBuild {
             ndkBuild {
-                def opencvVer = project.findProperty('opencvVersion') ?: '4.9.0'
+                def opencvVer = project.findProperty('opencvVersion') ?: '3.4.16'
                 arguments "NDK_APPLICATION_MK=src/main/jni/Application.mk",
                           "OPENCV_VERSION=${opencvVer}"
                 abiFilters 'arm64-v8a'
