@@ -23,7 +23,12 @@ public:
               .vectorize(x, 16, TailStrategy::GuardWithIf)
               .parallel(y);
 
+        // Interleaved layout: channel stride = 1, x stride = 3
+        input.dim(0).set_stride(3);
+        input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);
+        output.dim(0).set_stride(3);
+        output.dim(2).set_stride(1);
     }
 };
 

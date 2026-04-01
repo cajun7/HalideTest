@@ -24,14 +24,14 @@ public:
 
         int code = rotation_code;
         if (code == 1) {
-            // 90 CW: (x,y) -> (y, w-1-x) in source
-            output(x, y, c) = input(y, w - 1 - x, c);
+            // 90 CW: output HxW, output(x,y) -> input(y, h-1-x)
+            output(x, y, c) = input(y, h - 1 - x, c);
         } else if (code == 2) {
-            // 180: (x,y) -> (w-1-x, h-1-y) in source
+            // 180: output WxH, output(x,y) -> input(w-1-x, h-1-y)
             output(x, y, c) = input(w - 1 - x, h - 1 - y, c);
         } else {
-            // 270 CW (90 CCW): (x,y) -> (h-1-y, x) in source
-            output(x, y, c) = input(h - 1 - y, x, c);
+            // 270 CW (90 CCW): output HxW, output(x,y) -> input(w-1-y, x)
+            output(x, y, c) = input(w - 1 - y, x, c);
         }
 
         output.reorder(c, x, y)
@@ -40,7 +40,12 @@ public:
               .vectorize(x, 16, TailStrategy::GuardWithIf)
               .parallel(y);
 
+        // Interleaved layout: channel stride = 1, x stride = 3
+        input.dim(0).set_stride(3);
+        input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);
+        output.dim(0).set_stride(3);
+        output.dim(2).set_stride(1);
     }
 };
 
@@ -83,6 +88,8 @@ public:
         Expr fx = src_x - cast<float>(ix);
         Expr fy = src_y - cast<float>(iy);
 
+        // Note: cannot use unsafe_promise_clamped here -- rotated coordinates
+        // frequently go far outside the image bounds. constant_exterior handles this.
         Expr val = as_float(ix, iy, c) * (1.0f - fx) * (1.0f - fy) +
                    as_float(ix + 1, iy, c) * fx * (1.0f - fy) +
                    as_float(ix, iy + 1, c) * (1.0f - fx) * fy +

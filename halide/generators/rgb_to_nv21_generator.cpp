@@ -6,8 +6,8 @@ using namespace Halide;
 //
 // Inverse of nv21_to_rgb_generator.cpp. Produces:
 //   Y plane:  width x height (full resolution), uint8
-//   UV plane: (width/2) x (height/2) x 2 (interleaved V,U at half resolution)
-//             Channel 0 = V (Cr), Channel 1 = U (Cb)
+//   UV plane: width x (height/2) raw bytes, interleaved V,U pairs
+//             V at even offsets, U at odd offsets within each row
 //
 // BT.601 forward transform:
 //   Y  = (( 66*R + 129*G +  25*B + 128) >> 8) +  16
@@ -19,16 +19,17 @@ class RgbToNv21 : public Generator<RgbToNv21> {
 public:
     Input<Buffer<uint8_t, 3>> input{"input"};          // width x height x 3 (RGB interleaved)
     Output<Buffer<uint8_t, 2>> y_output{"y_output"};   // width x height
-    Output<Buffer<uint8_t, 3>> uv_output{"uv_output"}; // (width/2) x (height/2) x 2
+    Output<Buffer<uint8_t, 2>> uv_output{"uv_output"}; // width x (height/2) raw bytes
 
-    Var x{"x"}, y{"y"}, c{"c"};
+    Var x{"x"}, y{"y"};
 
     void generate() {
         // Helper: extract R, G, B as int16 at any (px, py)
+        // Use int32 to avoid overflow in BT.601 arithmetic
         Func r_val("r_val"), g_val("g_val"), b_val("b_val");
-        r_val(x, y) = cast<int16_t>(input(x, y, 0));
-        g_val(x, y) = cast<int16_t>(input(x, y, 1));
-        b_val(x, y) = cast<int16_t>(input(x, y, 2));
+        r_val(x, y) = cast<int32_t>(input(x, y, 0));
+        g_val(x, y) = cast<int32_t>(input(x, y, 1));
+        b_val(x, y) = cast<int32_t>(input(x, y, 2));
 
         // Y at full resolution
         Expr r = r_val(x, y);
@@ -38,23 +39,25 @@ public:
         y_output(x, y) = cast<uint8_t>(clamp(y_val, 0, 255));
 
         // UV at half resolution: average Cb/Cr over each 2x2 block
-        // For block at (bx, by), sample the 4 pixels:
-        //   (2*bx, 2*by), (2*bx+1, 2*by), (2*bx, 2*by+1), (2*bx+1, 2*by+1)
+        // x here is the byte offset (0, 1, 2, ... w-1), y is the UV row
+        // Even x = V (Cr), odd x = U (Cb)
+        // Block pixel coords: bx = (x/2)*2, by = y*2
+        Expr bx = (x / 2) * 2;
+        Expr by = 2 * y;
+
         Func cb_full("cb_full"), cr_full("cr_full");
         cb_full(x, y) = ((-38 * r_val(x, y) - 74 * g_val(x, y) + 112 * b_val(x, y) + 128) >> 8) + 128;
         cr_full(x, y) = ((112 * r_val(x, y) - 94 * g_val(x, y) - 18 * b_val(x, y) + 128) >> 8) + 128;
 
-        // Average 2x2 block for subsampling
-        Expr bx = 2 * x;
-        Expr by = 2 * y;
         Expr cr_avg = (cr_full(bx, by) + cr_full(bx + 1, by) +
                        cr_full(bx, by + 1) + cr_full(bx + 1, by + 1) + 2) / 4;
         Expr cb_avg = (cb_full(bx, by) + cb_full(bx + 1, by) +
                        cb_full(bx, by + 1) + cb_full(bx + 1, by + 1) + 2) / 4;
 
-        // NV21 interleaved: channel 0 = V (Cr), channel 1 = U (Cb)
-        uv_output(x, y, c) = cast<uint8_t>(clamp(
-            mux(c, {cr_avg, cb_avg}), 0, 255));
+        // NV21: V at even byte, U at odd byte
+        Expr is_v = (x % 2) == 0;
+        uv_output(x, y) = cast<uint8_t>(clamp(
+            select(is_v, cr_avg, cb_avg), 0, 255));
     }
 
     void schedule() {
@@ -63,19 +66,13 @@ public:
                 .parallel(y);
 
         // UV output schedule
-        uv_output.reorder(c, x, y)
-                 .bound(c, 0, 2)
-                 .unroll(c)
-                 .vectorize(x, 8, TailStrategy::GuardWithIf)
+        uv_output.vectorize(x, 8, TailStrategy::GuardWithIf)
                  .parallel(y);
 
-        // Input constraint: 3-channel interleaved RGB
         input.dim(2).set_bounds(0, 3);
 
-        // UV output stride constraints: interleaved VU (matches nv21_to_rgb uv_plane layout)
-        uv_output.dim(0).set_stride(2);   // interleaved VU pairs
-        uv_output.dim(2).set_bounds(0, 2);
-        uv_output.dim(2).set_stride(1);
+        // UV output: contiguous bytes
+        uv_output.dim(0).set_stride(1);
     }
 };
 

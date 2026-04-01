@@ -69,7 +69,7 @@ echo "ndk.dir=$HOME/Library/Android/sdk/ndk/27.1.12297006" >> local.properties
 ### 4. Download Dependencies
 
 ```bash
-# Halide 18.0.0 SDK (host compiler + includes)
+# Halide 21.0.0 SDK (host compiler + includes)
 bash scripts/setup_halide.sh
 
 # OpenCV 4.9.0 Android SDK (static libraries)
@@ -223,7 +223,7 @@ Halide/
 │   │   ├── resize_letterbox_generator.cpp
 │   │   └── rotate_generator.cpp
 │   ├── build_generators.sh      # Host compile + AOT cross-compile script
-│   ├── Halide-18.0.0/           # (gitignored) Halide SDK
+│   ├── Halide-21.0.0/           # (gitignored) Halide SDK
 │   └── generated/arm64-v8a/     # (gitignored) .a + .h output
 │
 ├── opencv/

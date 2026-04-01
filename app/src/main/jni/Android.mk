@@ -4,7 +4,7 @@ LOCAL_PATH := $(call my-dir)
 # Paths to external SDKs
 # ---------------------------------------------------------------
 HALIDE_GEN_DIR := $(LOCAL_PATH)/../../../../halide/generated/arm64-v8a
-HALIDE_INCLUDE := $(LOCAL_PATH)/../../../../halide/Halide-18.0.0/include
+HALIDE_INCLUDE := $(LOCAL_PATH)/../../../../halide/Halide-21.0.0/include
 OPENCV_ANDROID_SDK := $(LOCAL_PATH)/../../../../opencv/OpenCV-android-sdk
 
 # ---------------------------------------------------------------
@@ -36,7 +36,9 @@ LOCAL_C_INCLUDES += \
 
 LOCAL_LDLIBS += -llog -lm -ljnigraphics -landroid
 
-# Link all Halide AOT-generated static libraries
+# Link all Halide AOT-generated static libraries.
+# halide_runtime.a MUST come LAST: pipelines reference runtime symbols,
+# and the linker only pulls .o from archives that resolve current undefs.
 LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/rgb_bgr_convert.a \
     $(HALIDE_GEN_DIR)/nv21_to_rgb.a \
@@ -49,6 +51,7 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/rotate_arbitrary.a \
     $(HALIDE_GEN_DIR)/rgb_to_nv21.a \
     $(HALIDE_GEN_DIR)/resize_area.a \
-    $(HALIDE_GEN_DIR)/resize_letterbox.a
+    $(HALIDE_GEN_DIR)/resize_letterbox.a \
+    $(HALIDE_GEN_DIR)/halide_runtime.a
 
 include $(BUILD_SHARED_LIBRARY)

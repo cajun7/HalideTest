@@ -62,11 +62,15 @@ public:
         Expr fx = src_x - cast<float>(ix);
         Expr fy = src_y - cast<float>(iy);
 
+        // Promise coordinates are in valid range for repeat_edge.
+        Expr ix_s = unsafe_promise_clamped(ix, -1, input.dim(0).extent());
+        Expr iy_s = unsafe_promise_clamped(iy, -1, input.dim(1).extent());
+
         // Bilinear interpolation: 4-tap (2x2 neighborhood)
-        Expr val = as_float(ix, iy, c) * (1.0f - fx) * (1.0f - fy) +
-                   as_float(ix + 1, iy, c) * fx * (1.0f - fy) +
-                   as_float(ix, iy + 1, c) * (1.0f - fx) * fy +
-                   as_float(ix + 1, iy + 1, c) * fx * fy;
+        Expr val = as_float(ix_s, iy_s, c) * (1.0f - fx) * (1.0f - fy) +
+                   as_float(ix_s + 1, iy_s, c) * fx * (1.0f - fy) +
+                   as_float(ix_s, iy_s + 1, c) * (1.0f - fx) * fy +
+                   as_float(ix_s + 1, iy_s + 1, c) * fx * fy;
 
         // Output: interpolated pixel inside region, black outside
         output(x, y, c) = select(in_region,
@@ -83,7 +87,12 @@ public:
               .parallel(y)
               .vectorize(x, 8, TailStrategy::GuardWithIf);
 
+        // Interleaved layout: channel stride = 1, x stride = 3
+        input.dim(0).set_stride(3);
+        input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);
+        output.dim(0).set_stride(3);
+        output.dim(2).set_stride(1);
     }
 };
 

@@ -80,9 +80,8 @@ TEST_P(RotateArbitraryTest, ZeroAngle_IsNearIdentity) {
     auto [width, height] = GetParam();
 
     cv::Mat rgb = make_test_image_bgr(width, height);
-    auto input_buf = mat_to_halide_interleaved(rgb);
-    Halide::Runtime::Buffer<uint8_t> output_buf =
-        Halide::Runtime::Buffer<uint8_t>::make_interleaved(width, height, 3);
+    auto input_buf = mat_to_halide_planar(rgb);
+    Halide::Runtime::Buffer<uint8_t> output_buf(width, height, 3);
 
     int err = rotate_arbitrary(input_buf, 0.0f, output_buf);
     ASSERT_EQ(err, 0);
@@ -118,12 +117,13 @@ TEST_P(RotateArbitraryTest, Rotate45_MatchesOpenCV) {
     cv::warpAffine(bgr, opencv_result, rot_mat, cv::Size(width, height),
                    cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
 
-    // Halide
-    auto input_buf = mat_to_halide_interleaved(rgb);
-    Halide::Runtime::Buffer<uint8_t> output_buf =
-        Halide::Runtime::Buffer<uint8_t>::make_interleaved(width, height, 3);
+    // Halide (planar buffers — constant_exterior has issues with interleaved strides in v21)
+    auto input_buf = mat_to_halide_planar(rgb);
+    Halide::Runtime::Buffer<uint8_t> output_buf(width, height, 3);
 
-    int err = rotate_arbitrary(input_buf, angle_rad, output_buf);
+    // Negate angle: Halide's "positive=CCW" in math coords is CW in image coords,
+    // while OpenCV's getRotationMatrix2D uses positive=CCW in image coords.
+    int err = rotate_arbitrary(input_buf, -angle_rad, output_buf);
     ASSERT_EQ(err, 0);
 
     // Higher tolerance due to interpolation differences at edges
@@ -135,12 +135,11 @@ TEST_P(RotateArbitraryTest, NoCrash_VariousAngles) {
     auto [width, height] = GetParam();
 
     cv::Mat rgb(height, width, CV_8UC3, cv::Scalar(100, 150, 200));
-    auto input_buf = mat_to_halide_interleaved(rgb);
+    auto input_buf = mat_to_halide_planar(rgb);
 
     float angles[] = {0.0f, 0.1f, 0.5f, 1.0f, 1.5708f, 3.14159f, 4.71239f, 6.28318f};
     for (float angle : angles) {
-        Halide::Runtime::Buffer<uint8_t> output_buf =
-            Halide::Runtime::Buffer<uint8_t>::make_interleaved(width, height, 3);
+        Halide::Runtime::Buffer<uint8_t> output_buf(width, height, 3);
 
         int err = rotate_arbitrary(input_buf, angle, output_buf);
         ASSERT_EQ(err, 0) << "Crashed at angle=" << angle

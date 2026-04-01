@@ -165,6 +165,20 @@ inline Halide::Runtime::Buffer<uint8_t> mat_to_halide_interleaved(cv::Mat& mat) 
         mat.data, mat.cols, mat.rows, mat.channels());
 }
 
+// Copy cv::Mat (interleaved) into a planar Halide Buffer (width x height x channels).
+// Use for generators that don't set interleaved stride constraints.
+inline Halide::Runtime::Buffer<uint8_t> mat_to_halide_planar(const cv::Mat& mat) {
+    Halide::Runtime::Buffer<uint8_t> buf(mat.cols, mat.rows, mat.channels());
+    for (int y = 0; y < mat.rows; y++) {
+        for (int x = 0; x < mat.cols; x++) {
+            for (int c = 0; c < mat.channels(); c++) {
+                buf(x, y, c) = mat.at<cv::Vec3b>(y, x)[c];
+            }
+        }
+    }
+    return buf;
+}
+
 // Copy Halide Buffer (x, y, c) data into an OpenCV Mat for display/comparison.
 inline cv::Mat halide_to_mat_rgb(const Halide::Runtime::Buffer<uint8_t>& buf) {
     cv::Mat mat(buf.height(), buf.width(), CV_8UC3);

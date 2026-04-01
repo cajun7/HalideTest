@@ -31,11 +31,17 @@ public:
         Expr fx = src_x - cast<float>(ix);
         Expr fy = src_y - cast<float>(iy);
 
+        // Promise coordinates are in valid range for repeat_edge.
+        // This eliminates redundant boundary clamp code in the inner loop,
+        // improving vectorization. Safe because repeat_edge already clamps.
+        Expr ix_s = unsafe_promise_clamped(ix, -1, input.dim(0).extent());
+        Expr iy_s = unsafe_promise_clamped(iy, -1, input.dim(1).extent());
+
         // Bilinear interpolation: 4-tap (2x2 neighborhood)
-        Expr val = as_float(ix, iy, c) * (1.0f - fx) * (1.0f - fy) +
-                   as_float(ix + 1, iy, c) * fx * (1.0f - fy) +
-                   as_float(ix, iy + 1, c) * (1.0f - fx) * fy +
-                   as_float(ix + 1, iy + 1, c) * fx * fy;
+        Expr val = as_float(ix_s, iy_s, c) * (1.0f - fx) * (1.0f - fy) +
+                   as_float(ix_s + 1, iy_s, c) * fx * (1.0f - fy) +
+                   as_float(ix_s, iy_s + 1, c) * (1.0f - fx) * fy +
+                   as_float(ix_s + 1, iy_s + 1, c) * fx * fy;
 
         output(x, y, c) = cast<uint8_t>(clamp(val, 0.0f, 255.0f));
 
@@ -49,7 +55,12 @@ public:
               .parallel(y)
               .vectorize(x, 16, TailStrategy::GuardWithIf);
 
+        // Interleaved layout: channel stride = 1, x stride = 3
+        input.dim(0).set_stride(3);
+        input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);
+        output.dim(0).set_stride(3);
+        output.dim(2).set_stride(1);
     }
 };
 
@@ -93,11 +104,15 @@ public:
         Expr ix = cast<int>(floor(src_x));
         Expr fx = src_x - cast<float>(ix);
 
+        // Promise source x-coordinate in valid range for repeat_edge,
+        // eliminating redundant boundary clamp code in the inner loop.
+        Expr ix_s = unsafe_promise_clamped(ix, -1, input.dim(0).extent());
+
         // --- Horizontal pass: 4-tap cubic along x for each source row ---
         Func h_interp("h_interp");
         Expr h_val = cast<float>(0);
         for (int dx = -1; dx <= 2; dx++) {
-            h_val += as_float(ix + dx, y, c) * cubic_weight(fx - cast<float>(dx));
+            h_val += as_float(ix_s + dx, y, c) * cubic_weight(fx - cast<float>(dx));
         }
         h_interp(x, y, c) = h_val;
 
@@ -106,10 +121,13 @@ public:
         Expr iy = cast<int>(floor(src_y));
         Expr fy = src_y - cast<float>(iy);
 
+        // Promise source y-coordinate in valid range for repeat_edge.
+        Expr iy_s = unsafe_promise_clamped(iy, -1, input.dim(1).extent());
+
         // --- Vertical pass: 4-tap cubic along y over horizontal results ---
         Expr v_val = cast<float>(0);
         for (int dy = -1; dy <= 2; dy++) {
-            v_val += h_interp(x, iy + dy, c) * cubic_weight(fy - cast<float>(dy));
+            v_val += h_interp(x, iy_s + dy, c) * cubic_weight(fy - cast<float>(dy));
         }
 
         output(x, y, c) = cast<uint8_t>(clamp(v_val, 0.0f, 255.0f));
@@ -129,7 +147,12 @@ public:
               .parallel(y)
               .vectorize(x, 8, TailStrategy::GuardWithIf);
 
+        // Interleaved layout: channel stride = 1, x stride = 3
+        input.dim(0).set_stride(3);
+        input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);
+        output.dim(0).set_stride(3);
+        output.dim(2).set_stride(1);
     }
 };
 

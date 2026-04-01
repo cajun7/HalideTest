@@ -1,22 +1,28 @@
 #!/bin/bash
 # Compile Halide generators on host, then AOT cross-compile for Android arm64-v8a.
 #
-# Two-stage pipeline:
-# 1. Host compile: generator source + GenGen.cpp -> host executable
+# Three-stage pipeline:
+# 1. Host compile: generator source + libGenGen.a -> host executable
 # 2. AOT cross-compile: host executable -> .a (static lib) + .h (header) for arm-64-android
+#    Multi-target: high-feature (armv82a+dot_prod+fp16) with baseline fallback
+# 3. Generate standalone Halide runtime for runtime feature dispatch
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HALIDE_DIR="${SCRIPT_DIR}/Halide-18.0.0"
-GENGEN="${SCRIPT_DIR}/tools/GenGen.cpp"
+HALIDE_DIR="${SCRIPT_DIR}/Halide-21.0.0"
 GEN_SRC_DIR="${SCRIPT_DIR}/generators"
 OUTPUT_DIR="${SCRIPT_DIR}/generated/arm64-v8a"
 BIN_DIR="${SCRIPT_DIR}/bin"
 
 HALIDE_INCLUDE="${HALIDE_DIR}/include"
 HALIDE_LIB="${HALIDE_DIR}/lib"
+GENGEN_LIB="${HALIDE_DIR}/lib/libHalide_GenGen.a"
 
-HL_TARGET="arm-64-android-arm_fp16"
+# Multi-target: most-featured first (checked first at runtime via getauxval)
+HL_TARGET_HIGH="arm-64-android-armv82a-arm_dot_prod-arm_fp16-no_runtime"
+HL_TARGET_BASE="arm-64-android-no_runtime"
+HL_MULTI_TARGET="${HL_TARGET_HIGH},${HL_TARGET_BASE}"
+HL_SINGLE_TARGET="arm-64-android-no_runtime"
 
 # Verify Halide SDK exists
 if [ ! -f "${HALIDE_INCLUDE}/Halide.h" ]; then
@@ -25,9 +31,9 @@ if [ ! -f "${HALIDE_INCLUDE}/Halide.h" ]; then
     exit 1
 fi
 
-if [ ! -f "${GENGEN}" ]; then
-    echo "ERROR: GenGen.cpp not found at ${GENGEN}"
-    echo "Run scripts/setup_halide.sh first."
+if [ ! -f "${GENGEN_LIB}" ]; then
+    echo "ERROR: libHalide_GenGen.a not found at ${GENGEN_LIB}"
+    echo "Halide v21+ requires libHalide_GenGen.a. Run scripts/setup_halide.sh first."
     exit 1
 fi
 
@@ -35,6 +41,17 @@ mkdir -p "${BIN_DIR}" "${OUTPUT_DIR}"
 
 CXX="${CXX:-c++}"
 CXXFLAGS="-std=c++17 -fno-rtti -Wall -O2"
+
+# OS-specific whole-archive flag for libGenGen.a
+OS_NAME=$(uname -s)
+case "${OS_NAME}" in
+    Darwin)
+        GENGEN_LINK="-Wl,-force_load,${GENGEN_LIB}"
+        ;;
+    *)
+        GENGEN_LINK="-Wl,--whole-archive ${GENGEN_LIB} -Wl,--no-whole-archive"
+        ;;
+esac
 
 # On macOS, we need to set DYLD_LIBRARY_PATH for the host executables
 export DYLD_LIBRARY_PATH="${HALIDE_LIB}:${DYLD_LIBRARY_PATH:-}"
@@ -47,44 +64,69 @@ for src in "${GEN_SRC_DIR}"/*_generator.cpp; do
     name=$(basename "$src" .cpp)
     echo "  Compiling: ${name}"
     ${CXX} ${CXXFLAGS} \
-        "${src}" "${GENGEN}" \
+        "${src}" \
         -I "${HALIDE_INCLUDE}" \
         -L "${HALIDE_LIB}" \
         -lHalide \
+        ${GENGEN_LINK} \
         -lpthread -ldl -lz \
         -Wl,-rpath,"${HALIDE_LIB}" \
         -o "${BIN_DIR}/${name}"
 done
 
 echo ""
-echo "=== Stage 2: AOT cross-compiling for ${HL_TARGET} ==="
+echo "=== Stage 2: AOT cross-compiling (multi-target: high + baseline) ==="
 
-# Each entry: "generator_exe -g registered_name [-f func_name] [extra params]"
-# The -g flag selects which registered generator to run
-# Output: <registered_name>.a and <registered_name>.h in OUTPUT_DIR
-RUNS=(
-    "rgb_bgr_generator -g rgb_bgr_convert -f rgb_bgr_convert -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "nv21_to_rgb_generator -g nv21_to_rgb -f nv21_to_rgb -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "gaussian_blur_generator -g gaussian_blur_y -f gaussian_blur_y -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "gaussian_blur_generator -g gaussian_blur_rgb -f gaussian_blur_rgb -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "lens_blur_generator -g lens_blur -f lens_blur -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "resize_generator -g resize_bilinear -f resize_bilinear -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "resize_generator -g resize_bicubic -f resize_bicubic -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "rotate_generator -g rotate_fixed -f rotate_fixed -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "rotate_generator -g rotate_arbitrary -f rotate_arbitrary -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "rgb_to_nv21_generator -g rgb_to_nv21 -f rgb_to_nv21 -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "resize_area_generator -g resize_area -f resize_area -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
-    "resize_letterbox_generator -g resize_letterbox -f resize_letterbox -e static_library,h,registration -o ${OUTPUT_DIR} target=${HL_TARGET}"
+# Generators that benefit from arm_dot_prod / arm_fp16 (arithmetic-heavy)
+MULTI_TARGET_RUNS=(
+    "nv21_to_rgb_generator -g nv21_to_rgb -f nv21_to_rgb"
+    "gaussian_blur_generator -g gaussian_blur_y -f gaussian_blur_y"
+    "gaussian_blur_generator -g gaussian_blur_rgb -f gaussian_blur_rgb"
+    "lens_blur_generator -g lens_blur -f lens_blur"
+    "resize_generator -g resize_bilinear -f resize_bilinear"
+    "resize_generator -g resize_bicubic -f resize_bicubic"
+    "rotate_generator -g rotate_arbitrary -f rotate_arbitrary"
+    "rgb_to_nv21_generator -g rgb_to_nv21 -f rgb_to_nv21"
+    "resize_area_generator -g resize_area -f resize_area"
+    "resize_letterbox_generator -g resize_letterbox -f resize_letterbox"
 )
 
-for run in "${RUNS[@]}"; do
-    # Split into array: first element is the generator executable name, rest are args
+# Generators with no arithmetic benefit (pure index/channel remapping)
+SINGLE_TARGET_RUNS=(
+    "rgb_bgr_generator -g rgb_bgr_convert -f rgb_bgr_convert"
+    "rotate_generator -g rotate_fixed -f rotate_fixed"
+)
+
+for run in "${MULTI_TARGET_RUNS[@]}"; do
     read -ra parts <<< "$run"
     gen_name="${parts[0]}"
     args=("${parts[@]:1}")
-    echo "  Running: ${gen_name} ${args[*]}"
-    "${BIN_DIR}/${gen_name}" "${args[@]}"
+    echo "  [multi-target] ${args[*]}"
+    "${BIN_DIR}/${gen_name}" "${args[@]}" \
+        -e static_library,h,registration \
+        -o "${OUTPUT_DIR}" \
+        target="${HL_MULTI_TARGET}"
 done
+
+for run in "${SINGLE_TARGET_RUNS[@]}"; do
+    read -ra parts <<< "$run"
+    gen_name="${parts[0]}"
+    args=("${parts[@]:1}")
+    echo "  [single-target] ${args[*]}"
+    "${BIN_DIR}/${gen_name}" "${args[@]}" \
+        -e static_library,h,registration \
+        -o "${OUTPUT_DIR}" \
+        target="${HL_SINGLE_TARGET}"
+done
+
+echo ""
+echo "=== Stage 3: Generating standalone Halide runtime ==="
+"${BIN_DIR}/rgb_bgr_generator" \
+    -r halide_runtime \
+    -e static_library \
+    -o "${OUTPUT_DIR}" \
+    target=arm-64-android
+echo "  Generated halide_runtime.a"
 
 echo ""
 echo "=== Done ==="

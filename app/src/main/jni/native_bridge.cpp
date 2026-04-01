@@ -83,18 +83,24 @@ Java_com_example_halidetest_NativeBridge_nv21ToRgb(
         uint8_t* uv_ptr = y_ptr + w * h;
 
         Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, w, h);
-        halide_dimension_t uv_dims[3] = {
-            {0, w / 2, 2},
-            {0, h / 2, w},
-            {0, 2, 1},
-        };
-        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, 3, uv_dims);
+        // UV plane as 2D raw bytes: width x (height/2)
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, w, h / 2);
 
-        std::vector<uint8_t> rgb_out(w * h * 3);
-        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+        // Use planar output (Halide default stride) then copy to RGBA
+        Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
         halide_ops::nv21_to_rgb(y_buf, uv_buf, obuf);
 
-        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
+        // Copy planar RGB to RGBA pixel by pixel
+        uint8_t* dst = (uint8_t*)out_lock.pixels;
+        for (int py = 0; py < h; py++) {
+            for (int px = 0; px < w; px++) {
+                int di = (py * w + px) * 4;
+                dst[di + 0] = obuf(px, py, 0);
+                dst[di + 1] = obuf(px, py, 1);
+                dst[di + 2] = obuf(px, py, 2);
+                dst[di + 3] = 255;
+            }
+        }
     } else {
         cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, (uint8_t*)nv21_ptr);
         cv::Mat rgb_out;
@@ -261,17 +267,26 @@ Java_com_example_halidetest_NativeBridge_rotate(
         std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(ow * oh * 3);
         rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
 
-        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
-        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), ow, oh, 3);
-
         float angle_rad = angleDegrees * 3.14159265358979f / 180.0f;
 
         // Use fixed rotation for exact multiples of 90
-        int angle_int = (int)angleDegrees;
         if (angleDegrees == 90.0f) {
+            auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+            auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), ow, oh, 3);
             halide_ops::rotate_90(ibuf, obuf);
         } else {
+            // rotate_arbitrary uses planar buffers (constant_exterior + interleaved has issues)
+            Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
+            Halide::Runtime::Buffer<uint8_t> obuf(ow, oh, 3);
+            for (int py = 0; py < h; py++)
+                for (int px = 0; px < w; px++)
+                    for (int pc = 0; pc < 3; pc++)
+                        ibuf(px, py, pc) = rgb_in[(py * w + px) * 3 + pc];
             halide_ops::rotate_angle(ibuf, angle_rad, obuf);
+            for (int py = 0; py < oh; py++)
+                for (int px = 0; px < ow; px++)
+                    for (int pc = 0; pc < 3; pc++)
+                        rgb_out[(py * ow + px) * 3 + pc] = obuf(px, py, pc);
         }
 
         rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, ow, oh);
@@ -321,19 +336,23 @@ Java_com_example_halidetest_NativeBridge_rgbToNv21(
         std::vector<uint8_t> rgb_in(w * h * 3);
         rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
 
-        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        // Copy interleaved RGB to planar buffer for Halide
+        Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
+        for (int py = 0; py < h; py++) {
+            for (int px = 0; px < w; px++) {
+                int si = (py * w + px) * 3;
+                ibuf(px, py, 0) = rgb_in[si + 0];
+                ibuf(px, py, 1) = rgb_in[si + 1];
+                ibuf(px, py, 2) = rgb_in[si + 2];
+            }
+        }
 
         // Y output: w x h
         Halide::Runtime::Buffer<uint8_t> y_buf((uint8_t*)nv21_ptr, w, h);
 
-        // UV output: (w/2) x (h/2) x 2 interleaved
+        // UV output: raw bytes, width x (height/2)
         uint8_t* uv_ptr = (uint8_t*)nv21_ptr + y_size;
-        halide_dimension_t uv_dims[3] = {
-            {0, w / 2, 2},
-            {0, h / 2, w},
-            {0, 2, 1},
-        };
-        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, 3, uv_dims);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, w, h / 2);
 
         halide_ops::rgb_to_nv21(ibuf, y_buf, uv_buf);
     } else {

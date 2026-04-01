@@ -6,28 +6,30 @@ using namespace Halide;
 //
 // NV21 memory layout:
 //   Y plane:  width x height (full resolution), uint8
-//   UV plane: width x (height/2) bytes, interleaved V,U pairs at half resolution
-//             For each 2x2 pixel block: one V byte, one U byte
-//             Stored as: V0 U0 V1 U1 ... (width/2 pairs per row, height/2 rows)
+//   UV plane: width x (height/2) raw bytes, interleaved V,U pairs at half resolution
+//             Stored as: V0 U0 V1 U1 ... (width bytes per row, height/2 rows)
 //
-// We model the UV plane as a 3D buffer: (width/2) x (height/2) x 2 (interleaved)
-// where channel 0 = V, channel 1 = U.
+// We model the UV plane as a 2D buffer: width x (height/2) raw bytes.
+// V is at even byte offsets, U at odd byte offsets within each row.
 class Nv21ToRgb : public Generator<Nv21ToRgb> {
 public:
     Input<Buffer<uint8_t, 2>> y_plane{"y_plane"};    // width x height
-    Input<Buffer<uint8_t, 3>> uv_plane{"uv_plane"};  // (width/2) x (height/2) x 2
+    Input<Buffer<uint8_t, 2>> uv_plane{"uv_plane"};  // width x (height/2) raw bytes
 
     Output<Buffer<uint8_t, 3>> output{"output"};      // width x height x 3 (RGB)
 
     Var x{"x"}, y{"y"}, c{"c"};
 
     void generate() {
-        // Sample Y at full resolution
-        Expr y_val = cast<int16_t>(y_plane(x, y));
+        // Sample Y at full resolution (use int32 to avoid overflow in BT.601 arithmetic)
+        Expr y_val = cast<int32_t>(y_plane(x, y));
 
-        // Sample UV at half resolution (NV21: channel 0 = V, channel 1 = U)
-        Expr v_val = cast<int16_t>(uv_plane(x / 2, y / 2, 0)) - 128;
-        Expr u_val = cast<int16_t>(uv_plane(x / 2, y / 2, 1)) - 128;
+        // Sample UV at half resolution from raw byte buffer
+        // NV21: V at even offset, U at odd offset within each row
+        Expr uv_x = (x / 2) * 2;   // byte offset of the V,U pair
+        Expr uv_y = y / 2;          // row in UV plane
+        Expr v_val = cast<int32_t>(uv_plane(uv_x, uv_y)) - 128;
+        Expr u_val = cast<int32_t>(uv_plane(uv_x + 1, uv_y)) - 128;
 
         // BT.601 YUV to RGB conversion (fixed-point, shift by 8)
         // Y' = (Y - 16) * 298
@@ -49,9 +51,7 @@ public:
               .parallel(y);
 
         y_plane.dim(0).set_stride(1);
-        uv_plane.dim(0).set_stride(2);  // interleaved VU
-        uv_plane.dim(2).set_bounds(0, 2);
-        uv_plane.dim(2).set_stride(1);
+        uv_plane.dim(0).set_stride(1);
     }
 };
 

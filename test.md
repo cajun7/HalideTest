@@ -27,7 +27,7 @@ You should see your device listed.
 Build & Run
 Step 1: Download dependencies (one-time)
 
-# Download Halide 18.0.0 SDK
+# Download Halide 21.0.0 SDK
 bash scripts/setup_halide.sh
 
 # Download OpenCV 4.9.0 Android SDK

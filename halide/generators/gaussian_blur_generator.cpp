@@ -58,6 +58,9 @@ public:
         output.split(y, y, yi, 32)
               .parallel(y)
               .vectorize(x, 16, TailStrategy::GuardWithIf);
+
+        // Prefetch input rows ahead of the current y iteration
+        output.prefetch(input, y, y, 2);
     }
 };
 
@@ -122,7 +125,15 @@ public:
               .parallel(y)
               .vectorize(x, 16, TailStrategy::GuardWithIf);
 
+        // Prefetch input rows ahead of the current y iteration
+        output.prefetch(input, y, y, 2);
+
+        // Interleaved layout: channel stride = 1, x stride = 3
+        input.dim(0).set_stride(3);
+        input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);
+        output.dim(0).set_stride(3);
+        output.dim(2).set_stride(1);
     }
 };
 

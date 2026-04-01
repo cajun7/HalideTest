@@ -10,7 +10,7 @@ Android NDK C++ application benchmarking Halide AOT-compiled image processing pi
 
 ### Prerequisites (one-time setup)
 ```bash
-# Download and extract Halide SDK (v18.0.0)
+# Download and extract Halide SDK (v21.0.0)
 bash scripts/setup_halide.sh
 
 # Download and extract OpenCV 3.4.16 Android SDK

@@ -4,18 +4,13 @@
 
 class RgbToNv21Test : public ::testing::TestWithParam<std::pair<int, int>> {};
 
-// Helper: set up UV output buffer with the interleaved VU layout expected by the generator.
+// Helper: set up UV output buffer as raw 2D bytes (width x height/2).
 // Returns a buffer backed by the provided storage vector.
 static Halide::Runtime::Buffer<uint8_t> make_uv_output_buf(
     std::vector<uint8_t>& storage, int w, int h)
 {
     storage.resize(w * (h / 2));
-    halide_dimension_t uv_dims[3] = {
-        {0, w / 2, 2},   // x: extent=w/2, stride=2 (interleaved)
-        {0, h / 2, w},   // y: extent=h/2, stride=w
-        {0, 2, 1},       // c: extent=2 (V,U), stride=1
-    };
-    return Halide::Runtime::Buffer<uint8_t>(storage.data(), 3, uv_dims);
+    return Halide::Runtime::Buffer<uint8_t>(storage.data(), w, h / 2);
 }
 
 // RGB -> NV21 -> RGB round-trip should be near-identity.
@@ -26,7 +21,7 @@ TEST_P(RgbToNv21Test, RoundTrip_NearIdentity) {
     int h = height & ~1;
 
     cv::Mat rgb = make_test_image_rgb(w, h);
-    auto input_buf = mat_to_halide_interleaved(rgb);
+    auto input_buf = mat_to_halide_planar(rgb);
 
     // Forward: RGB -> NV21
     Halide::Runtime::Buffer<uint8_t> y_buf(w, h);
@@ -37,8 +32,7 @@ TEST_P(RgbToNv21Test, RoundTrip_NearIdentity) {
     ASSERT_EQ(err, 0) << "rgb_to_nv21 failed";
 
     // Inverse: NV21 -> RGB
-    Halide::Runtime::Buffer<uint8_t> recovered =
-        Halide::Runtime::Buffer<uint8_t>::make_interleaved(w, h, 3);
+    Halide::Runtime::Buffer<uint8_t> recovered(w, h, 3);
 
     err = nv21_to_rgb(y_buf, uv_buf, recovered);
     ASSERT_EQ(err, 0) << "nv21_to_rgb failed";
@@ -54,7 +48,7 @@ TEST_P(RgbToNv21Test, YPlane_MatchesBT601) {
     int h = height & ~1;
 
     cv::Mat rgb = make_test_image_rgb(w, h);
-    auto input_buf = mat_to_halide_interleaved(rgb);
+    auto input_buf = mat_to_halide_planar(rgb);
 
     Halide::Runtime::Buffer<uint8_t> y_buf(w, h);
     std::vector<uint8_t> uv_storage;
@@ -90,7 +84,7 @@ TEST_P(RgbToNv21Test, UVPlane_MatchesBT601) {
     int h = height & ~1;
 
     cv::Mat rgb = make_test_image_rgb(w, h);
-    auto input_buf = mat_to_halide_interleaved(rgb);
+    auto input_buf = mat_to_halide_planar(rgb);
 
     Halide::Runtime::Buffer<uint8_t> y_buf(w, h);
     std::vector<uint8_t> uv_storage;
@@ -119,9 +113,9 @@ TEST_P(RgbToNv21Test, UVPlane_MatchesBT601) {
             int ref_cr = std::min(255, std::max(0, (cr_sum + 2) / 4));
             int ref_cb = std::min(255, std::max(0, (cb_sum + 2) / 4));
 
-            // uv_buf(bx, by, 0) = V (Cr), uv_buf(bx, by, 1) = U (Cb)
-            int diff_cr = std::abs((int)uv_buf(bx, by, 0) - ref_cr);
-            int diff_cb = std::abs((int)uv_buf(bx, by, 1) - ref_cb);
+            // uv_buf is 2D raw bytes: V at even offsets, U at odd offsets
+            int diff_cr = std::abs((int)uv_buf(bx * 2, by) - ref_cr);
+            int diff_cb = std::abs((int)uv_buf(bx * 2 + 1, by) - ref_cb);
             if (diff_cr > 2) mismatches++;
             if (diff_cb > 2) mismatches++;
             max_diff = std::max(max_diff, std::max(diff_cr, diff_cb));
@@ -140,7 +134,7 @@ TEST_P(RgbToNv21Test, RoundTrip_ViaOpenCV) {
     int h = height & ~1;
 
     cv::Mat rgb = make_test_image_rgb(w, h);
-    auto input_buf = mat_to_halide_interleaved(rgb);
+    auto input_buf = mat_to_halide_planar(rgb);
 
     // Forward: RGB -> NV21 via Halide
     Halide::Runtime::Buffer<uint8_t> y_buf(w, h);
@@ -193,7 +187,7 @@ TEST_P(RgbToNv21Test, NoCrash_AllResolutions) {
     int h = height & ~1;
 
     cv::Mat rgb = make_test_image_rgb(w, h);
-    auto input_buf = mat_to_halide_interleaved(rgb);
+    auto input_buf = mat_to_halide_planar(rgb);
 
     Halide::Runtime::Buffer<uint8_t> y_buf(w, h);
     std::vector<uint8_t> uv_storage;
