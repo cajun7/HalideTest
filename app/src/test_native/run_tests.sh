@@ -32,6 +32,9 @@ if [ ! -f "${NDK_ROOT}/ndk-build" ]; then
 fi
 
 echo "Using NDK: ${NDK_ROOT}"
+
+OPENCV_VERSION="${OPENCV_VERSION:-4.9.0}"
+echo "Using OpenCV: ${OPENCV_VERSION}"
 echo ""
 
 echo "=== Building test executable ==="
@@ -41,6 +44,7 @@ echo "=== Building test executable ==="
     NDK_APPLICATION_MK="${SCRIPT_DIR}/jni/Application.mk" \
     NDK_OUT="${SCRIPT_DIR}/obj" \
     NDK_LIBS_OUT="${SCRIPT_DIR}/libs" \
+    OPENCV_VERSION="${OPENCV_VERSION}" \
     -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
 echo ""

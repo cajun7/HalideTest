@@ -5,10 +5,12 @@ LOCAL_PATH := $(call my-dir)
 # ---------------------------------------------------------------
 HALIDE_GEN_DIR := $(LOCAL_PATH)/../../../../halide/generated/arm64-v8a
 HALIDE_INCLUDE := $(LOCAL_PATH)/../../../../halide/Halide-21.0.0/include
-OPENCV_ANDROID_SDK := $(LOCAL_PATH)/../../../../opencv/OpenCV-android-sdk
+OPENCV_VERSION ?= 4.9.0
+OPENCV_ANDROID_SDK := $(LOCAL_PATH)/../../../../opencv/$(OPENCV_VERSION)/OpenCV-android-sdk
 
 # ---------------------------------------------------------------
 # Import OpenCV as STATIC library.
+# Version selected via OPENCV_VERSION (default 4.9.0).
 # OpenCV.mk calls CLEAR_VARS internally, so LOCAL_MODULE etc.
 # must be set AFTER this include. Use += to append to OpenCV's variables.
 # ---------------------------------------------------------------
