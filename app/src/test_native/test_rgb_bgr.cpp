@@ -102,6 +102,31 @@ TEST_P(RgbBgrTest, RoundTrip_IsIdentity) {
     }
 }
 
+// Structural verification: output(x,y,0)==input(x,y,2), output(x,y,1)==input(x,y,1),
+// output(x,y,2)==input(x,y,0) for every pixel. Verifies exact byte-swap semantics.
+TEST_P(RgbBgrTest, ChannelSwap_StructuralVerify) {
+    auto [width, height] = GetParam();
+
+    cv::Mat rgb = make_test_image_rgb(width, height);
+    auto input_buf = mat_to_halide_interleaved(rgb);
+    Halide::Runtime::Buffer<uint8_t> output_buf =
+        Halide::Runtime::Buffer<uint8_t>::make_interleaved(width, height, 3);
+
+    int err = rgb_bgr_convert(input_buf, output_buf);
+    ASSERT_EQ(err, 0);
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            ASSERT_EQ(output_buf(x, y, 0), input_buf(x, y, 2))
+                << "R->B swap failed at (" << x << "," << y << ")";
+            ASSERT_EQ(output_buf(x, y, 1), input_buf(x, y, 1))
+                << "G passthrough failed at (" << x << "," << y << ")";
+            ASSERT_EQ(output_buf(x, y, 2), input_buf(x, y, 0))
+                << "B->R swap failed at (" << x << "," << y << ")";
+        }
+    }
+}
+
 INSTANTIATE_TEST_SUITE_P(
     Resolutions,
     RgbBgrTest,

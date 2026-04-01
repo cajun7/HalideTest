@@ -16,7 +16,7 @@ BIN_DIR="${SCRIPT_DIR}/bin"
 HALIDE_INCLUDE="${HALIDE_DIR}/include"
 HALIDE_LIB="${HALIDE_DIR}/lib"
 
-HL_TARGET="arm-64-android"
+HL_TARGET="arm-64-android-arm_fp16"
 
 # Verify Halide SDK exists
 if [ ! -f "${HALIDE_INCLUDE}/Halide.h" ]; then

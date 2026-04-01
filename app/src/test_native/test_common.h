@@ -101,6 +101,14 @@ inline cv::Mat make_test_image_bgr(int width, int height) {
     return img;
 }
 
+// Generate a gradient test image (3-channel RGB).
+inline cv::Mat make_test_image_rgb(int width, int height) {
+    cv::Mat bgr = make_test_image_bgr(width, height);
+    cv::Mat rgb;
+    cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
+    return rgb;
+}
+
 // Generate a gradient test image (single-channel grayscale).
 inline cv::Mat make_test_image_gray(int width, int height) {
     cv::Mat img(height, width, CV_8UC1);

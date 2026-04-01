@@ -19,6 +19,7 @@ LOCAL_MODULE := halide_tests
 
 LOCAL_SRC_FILES := \
     ../test_nv21_to_rgb.cpp \
+    ../test_rgb_to_nv21.cpp \
     ../test_rgb_bgr.cpp \
     ../test_gaussian_blur.cpp \
     ../test_lens_blur.cpp \
@@ -37,11 +38,13 @@ LOCAL_LDLIBS := -llog -lm
 LOCAL_LDFLAGS := \
     $(HALIDE_GEN_DIR)/rgb_bgr_convert.a \
     $(HALIDE_GEN_DIR)/nv21_to_rgb.a \
+    $(HALIDE_GEN_DIR)/rgb_to_nv21.a \
     $(HALIDE_GEN_DIR)/gaussian_blur_y.a \
     $(HALIDE_GEN_DIR)/gaussian_blur_rgb.a \
     $(HALIDE_GEN_DIR)/lens_blur.a \
     $(HALIDE_GEN_DIR)/resize_bilinear.a \
     $(HALIDE_GEN_DIR)/resize_bicubic.a \
+    $(HALIDE_GEN_DIR)/resize_area.a \
     $(HALIDE_GEN_DIR)/rotate_fixed.a \
     $(HALIDE_GEN_DIR)/rotate_arbitrary.a
 
