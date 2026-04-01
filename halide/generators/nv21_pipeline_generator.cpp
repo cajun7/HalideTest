@@ -152,7 +152,7 @@ public:
         output.reorder(c, x, y)
               .bound(c, 0, 3)
               .unroll(c)
-              .split(y, y, yi, 32)
+              .split(y, y, yi, 32, TailStrategy::GuardWithIf)
               .parallel(y)
               .vectorize(x, 16, TailStrategy::GuardWithIf);
 
@@ -171,13 +171,14 @@ HALIDE_REGISTER_GENERATOR(NV21PipelineBilinear, nv21_pipeline_bilinear)
 // ---------------------------------------------------------------------------
 // Fused NV21 -> Rotate -> [Flip] -> Resize (INTER_AREA) -> RGB Pipeline
 //
-// Same transform composition as bilinear variant, but uses non-separable
-// area filtering (box filter) for the resize step. Optimal for downscaling.
+// Separable 2-pass area filtering: horizontal pass averages along NV21
+// x-axis, vertical pass averages along NV21 y-axis. The 2D box-filter
+// weight w(col,row) = w_x(col) * w_y(row) factorizes, so separability
+// is exact. For fixed rotations the source footprint stays axis-aligned.
 //
-// For each output pixel, computes the 2D source footprint in NV21 space
-// and averages all Y/UV pixels within it with overlap weights.
+// Compared to the non-separable version: O(2*mk) vs O(mk^2) per pixel.
 //
-// max_pool GeneratorParam bounds the RDom (default 8 = up to 8x downscale).
+// max_pool GeneratorParam bounds each 1-D RDom (default 8 = up to 8x).
 // ---------------------------------------------------------------------------
 class NV21PipelineArea : public Generator<NV21PipelineArea> {
 public:
@@ -201,140 +202,204 @@ public:
         Expr src_h = y_plane.dim(1).extent();
         Expr src_wf = cast<float>(src_w);
         Expr src_hf = cast<float>(src_h);
-
-        Expr rotated_wf = (code == 1 || code == 3) ? src_hf : src_wf;
-        Expr rotated_hf = (code == 1 || code == 3) ? src_wf : src_hf;
-
         Expr tw = cast<float>(target_w);
         Expr th = cast<float>(target_h);
 
-        // Source footprint in rotated space for output pixel (x, y)
+        Func y_clamped = repeat_edge(y_plane);
+        Func uv_clamped = repeat_edge(uv_plane);
+        Expr uv_w_dim = uv_plane.dim(0).extent();
+        Expr uv_h_dim = uv_plane.dim(1).extent();
+
+        // Rotated-space dimensions
+        Expr rotated_wf = (code == 1 || code == 3) ? src_hf : src_wf;
+        Expr rotated_hf = (code == 1 || code == 3) ? src_wf : src_hf;
+
+        // ================================================================
+        // NV21 footprint bounds in terms of (x, y) — for final
+        // normalization and for the vertical pass.
+        // ================================================================
         Expr rot_left  = cast<float>(x) * rotated_wf / tw;
         Expr rot_right = (cast<float>(x) + 1.0f) * rotated_wf / tw;
         Expr rot_top   = cast<float>(y) * rotated_hf / th;
         Expr rot_bot   = (cast<float>(y) + 1.0f) * rotated_hf / th;
 
-        // Apply inverse flip to footprint bounds
-        Expr fl, fr, ft, fb;
-        // Horizontal flip reverses left/right
-        fl = select(flip_code == 1, rotated_wf - rot_right, rot_left);
-        fr = select(flip_code == 1, rotated_wf - rot_left, rot_right);
-        // Vertical flip reverses top/bottom
-        ft = select(flip_code == 2, rotated_hf - rot_bot, rot_top);
-        fb = select(flip_code == 2, rotated_hf - rot_top, rot_bot);
+        Expr fl = select(flip_code == 1, rotated_wf - rot_right, rot_left);
+        Expr fr = select(flip_code == 1, rotated_wf - rot_left, rot_right);
+        Expr ft = select(flip_code == 2, rotated_hf - rot_bot, rot_top);
+        Expr fb = select(flip_code == 2, rotated_hf - rot_top, rot_bot);
 
-        // Apply inverse rotation to get footprint in NV21 source space
-        // For fixed rotations, axis-aligned rectangles stay axis-aligned
         Expr nv21_left, nv21_right, nv21_top, nv21_bot;
         if (code == 0) {
             nv21_left = fl; nv21_right = fr;
             nv21_top = ft; nv21_bot = fb;
         } else if (code == 1) {
-            // Inverse of 90 CW: sx=fy, sy=src_h-fx
             nv21_left = ft; nv21_right = fb;
             nv21_top = src_hf - fr; nv21_bot = src_hf - fl;
         } else if (code == 2) {
-            // Inverse of 180: sx=src_w-fx, sy=src_h-fy
             nv21_left = src_wf - fr; nv21_right = src_wf - fl;
             nv21_top = src_hf - fb; nv21_bot = src_hf - ft;
         } else {
-            // Inverse of 270 CW: sx=src_w-fy, sy=fx
             nv21_left = src_wf - fb; nv21_right = src_wf - ft;
             nv21_top = fl; nv21_bot = fr;
         }
-
-        // Clamp footprint to valid source range
-        nv21_left = clamp(nv21_left, 0.0f, src_wf);
+        nv21_left  = clamp(nv21_left, 0.0f, src_wf);
         nv21_right = clamp(nv21_right, 0.0f, src_wf);
-        nv21_top = clamp(nv21_top, 0.0f, src_hf);
-        nv21_bot = clamp(nv21_bot, 0.0f, src_hf);
+        nv21_top   = clamp(nv21_top, 0.0f, src_hf);
+        nv21_bot   = clamp(nv21_bot, 0.0f, src_hf);
 
-        Expr base_x = cast<int>(floor(nv21_left));
-        Expr base_y = cast<int>(floor(nv21_top));
+        // Analytical total weights (no accumulators needed)
+        Expr total_h = max(nv21_right - nv21_left, 0.0001f);
+        Expr total_v = max(nv21_bot - nv21_top, 0.0001f);
 
-        // Boundary-safe Y plane access
-        Func y_clamped = repeat_edge(y_plane);
+        // ================================================================
+        // HORIZONTAL PASS — 1-D area-average along NV21 x-axis
+        //
+        // h_y(h_idx, sr) = weighted sum of Y along source columns
+        //   code 0/2: h_idx = output x  (nv21 x-range depends on x)
+        //   code 1/3: h_idx = output y  (nv21 x-range depends on y)
+        // ================================================================
+        Var h_idx{"h_idx"}, sr{"sr"};
+        Expr hf = cast<float>(h_idx);
 
-        // --- Area-average Y over 2D source footprint ---
-        RDom r(0, mk, 0, mk);
-        Expr px = base_x + r.x;
-        Expr py = base_y + r.y;
+        // NV21 horizontal bounds as function of h_idx only
+        Expr nv21_h_left, nv21_h_right;
+        if (code == 0) {
+            Expr rl = hf * src_wf / tw;
+            Expr rr = (hf + 1.0f) * src_wf / tw;
+            nv21_h_left  = select(flip_code == 1, src_wf - rr, rl);
+            nv21_h_right = select(flip_code == 1, src_wf - rl, rr);
+        } else if (code == 1) {
+            Expr rt = hf * src_wf / th;
+            Expr rb = (hf + 1.0f) * src_wf / th;
+            nv21_h_left  = select(flip_code == 2, src_wf - rb, rt);
+            nv21_h_right = select(flip_code == 2, src_wf - rt, rb);
+        } else if (code == 2) {
+            Expr rl = hf * src_wf / tw;
+            Expr rr = (hf + 1.0f) * src_wf / tw;
+            Expr fl_h = select(flip_code == 1, src_wf - rr, rl);
+            Expr fr_h = select(flip_code == 1, src_wf - rl, rr);
+            nv21_h_left  = src_wf - fr_h;
+            nv21_h_right = src_wf - fl_h;
+        } else { // code == 3
+            Expr rt = hf * src_wf / th;
+            Expr rb = (hf + 1.0f) * src_wf / th;
+            Expr ft_h = select(flip_code == 2, src_wf - rb, rt);
+            Expr fb_h = select(flip_code == 2, src_wf - rt, rb);
+            nv21_h_left  = src_wf - fb_h;
+            nv21_h_right = src_wf - ft_h;
+        }
+        nv21_h_left  = clamp(nv21_h_left, 0.0f, src_wf);
+        nv21_h_right = clamp(nv21_h_right, 0.0f, src_wf);
 
-        // Compute overlap weights
-        Expr oleft = max(cast<float>(px), nv21_left);
-        Expr oright = min(cast<float>(px) + 1.0f, nv21_right);
-        Expr otop = max(cast<float>(py), nv21_top);
-        Expr obot = min(cast<float>(py) + 1.0f, nv21_bot);
-        Expr w_x = max(oright - oleft, 0.0f);
-        Expr w_y = max(obot - otop, 0.0f);
-        Expr weight = w_x * w_y;
+        Expr h_base = cast<int>(floor(nv21_h_left));
+        Expr h_fw = cast<int>(ceil(nv21_h_right - nv21_h_left)) + 1;
 
-        // Kernel extent guard
-        Expr footprint_w = cast<int>(ceil(nv21_right - nv21_left)) + 1;
-        Expr footprint_h = cast<int>(ceil(nv21_bot - nv21_top)) + 1;
-        Expr in_range = r.x < footprint_w && r.y < footprint_h;
+        // --- H pass: Y ---
+        RDom rh(0, mk);
+        Expr h_px = h_base + rh.x;
+        Expr h_ol = max(cast<float>(h_px), nv21_h_left);
+        Expr h_or = min(cast<float>(h_px) + 1.0f, nv21_h_right);
+        Expr h_w  = max(h_or - h_ol, 0.0f);
+        Expr h_in = rh.x < h_fw;
 
-        Func y_sum("y_sum"), wt_sum("wt_sum");
-        y_sum(x, y) = 0.0f;
-        wt_sum(x, y) = 0.0f;
-        y_sum(x, y) += select(in_range,
-            weight * cast<float>(y_clamped(clamp(px, 0, src_w - 1),
-                                           clamp(py, 0, src_h - 1))),
+        Func h_y("h_y");
+        h_y(h_idx, sr) = 0.0f;
+        h_y(h_idx, sr) += select(h_in,
+            h_w * cast<float>(y_clamped(clamp(h_px, 0, src_w - 1),
+                                         clamp(sr, 0, src_h - 1))),
             0.0f);
-        wt_sum(x, y) += select(in_range, weight, 0.0f);
 
-        Expr y_avg = y_sum(x, y) / max(wt_sum(x, y), 0.0001f);
+        // --- H pass: UV (half-res) ---
+        Expr uv_h_left  = nv21_h_left / 2.0f;
+        Expr uv_h_right = nv21_h_right / 2.0f;
+        Expr uv_h_base  = cast<int>(floor(uv_h_left));
+        Expr uv_h_fw    = cast<int>(ceil(uv_h_right - uv_h_left)) + 1;
 
-        // --- Area-average UV at half resolution ---
-        // UV footprint is half the Y footprint
-        Expr uv_left = nv21_left / 2.0f;
-        Expr uv_right = nv21_right / 2.0f;
-        Expr uv_top = nv21_top / 2.0f;
-        Expr uv_bot = nv21_bot / 2.0f;
-        Expr uv_base_x = cast<int>(floor(uv_left));
-        Expr uv_base_y = cast<int>(floor(uv_top));
-
-        Func uv_clamped = repeat_edge(uv_plane);
-
-        // UV reduction: smaller footprint since it's half-res
-        // max_pool/2 + 1 is sufficient for UV
         int uv_mk = mk / 2 + 2;
-        RDom ruv(0, uv_mk, 0, uv_mk);
-        Expr uv_px = uv_base_x + ruv.x;
-        Expr uv_py = uv_base_y + ruv.y;
+        RDom rh_uv(0, uv_mk);
+        Expr uv_h_px = uv_h_base + rh_uv.x;
+        Expr uv_h_ol = max(cast<float>(uv_h_px), uv_h_left);
+        Expr uv_h_or = min(cast<float>(uv_h_px) + 1.0f, uv_h_right);
+        Expr uv_h_w  = max(uv_h_or - uv_h_ol, 0.0f);
+        Expr uv_h_in = rh_uv.x < uv_h_fw;
+        Expr uv_h_px_c = clamp(uv_h_px, 0, uv_w_dim / 2 - 1);
 
-        Expr uv_oleft = max(cast<float>(uv_px), uv_left);
-        Expr uv_oright = min(cast<float>(uv_px) + 1.0f, uv_right);
-        Expr uv_otop = max(cast<float>(uv_py), uv_top);
-        Expr uv_obot = min(cast<float>(uv_py) + 1.0f, uv_bot);
-        Expr uv_wx = max(uv_oright - uv_oleft, 0.0f);
-        Expr uv_wy = max(uv_obot - uv_otop, 0.0f);
-        Expr uv_weight = uv_wx * uv_wy;
-
-        Expr uv_fw = cast<int>(ceil(uv_right - uv_left)) + 1;
-        Expr uv_fh = cast<int>(ceil(uv_bot - uv_top)) + 1;
-        Expr uv_in_range = ruv.x < uv_fw && ruv.y < uv_fh;
-
-        // Clamp UV pixel coords
-        Expr uv_w = uv_plane.dim(0).extent();
-        Expr uv_h = uv_plane.dim(1).extent();
-        Expr uv_px_c = clamp(uv_px, 0, uv_w / 2 - 1);
-        Expr uv_py_c = clamp(uv_py, 0, uv_h - 1);
-
-        Func v_sum("v_sum"), u_sum("u_sum"), uv_wt_sum("uv_wt_sum");
-        v_sum(x, y) = 0.0f;
-        u_sum(x, y) = 0.0f;
-        uv_wt_sum(x, y) = 0.0f;
-        v_sum(x, y) += select(uv_in_range,
-            uv_weight * cast<float>(uv_clamped(uv_px_c * 2, uv_py_c)),
+        Func h_v("h_v"), h_u("h_u");
+        h_v(h_idx, sr) = 0.0f;
+        h_u(h_idx, sr) = 0.0f;
+        h_v(h_idx, sr) += select(uv_h_in,
+            uv_h_w * cast<float>(uv_clamped(uv_h_px_c * 2,
+                                             clamp(sr, 0, uv_h_dim - 1))),
             0.0f);
-        u_sum(x, y) += select(uv_in_range,
-            uv_weight * cast<float>(uv_clamped(uv_px_c * 2 + 1, uv_py_c)),
+        h_u(h_idx, sr) += select(uv_h_in,
+            uv_h_w * cast<float>(uv_clamped(uv_h_px_c * 2 + 1,
+                                             clamp(sr, 0, uv_h_dim - 1))),
             0.0f);
-        uv_wt_sum(x, y) += select(uv_in_range, uv_weight, 0.0f);
 
-        Expr v_avg = v_sum(x, y) / max(uv_wt_sum(x, y), 0.0001f);
-        Expr u_avg = u_sum(x, y) / max(uv_wt_sum(x, y), 0.0001f);
+        // ================================================================
+        // VERTICAL PASS — 1-D area-average along NV21 y-axis
+        //
+        // nv21_v_top/bot already computed above (depend on x or y
+        // depending on rotation, via the full (x,y)-based bounds).
+        // ================================================================
+        Expr v_base = cast<int>(floor(nv21_top));
+        Expr v_fw   = cast<int>(ceil(nv21_bot - nv21_top)) + 1;
+
+        // --- V pass: Y ---
+        RDom rv(0, mk);
+        Expr v_py_raw = v_base + rv.x;
+        // Clamp to valid source range — bounds the h_y allocation and
+        // makes the pipeline robust for any downscale factor (even > max_pool).
+        Expr v_py = clamp(v_py_raw, 0, src_h - 1);
+        Expr v_ol = max(cast<float>(v_py_raw), nv21_top);
+        Expr v_ob = min(cast<float>(v_py_raw) + 1.0f, nv21_bot);
+        Expr v_w  = max(v_ob - v_ol, 0.0f);
+        Expr v_in = rv.x < v_fw;
+
+        // h_y first index: x for code 0/2, y for code 1/3
+        Func v_y_sum("v_y_sum");
+        v_y_sum(x, y) = 0.0f;
+        if (code == 0 || code == 2)
+            v_y_sum(x, y) += select(v_in, v_w * h_y(x, v_py), 0.0f);
+        else
+            v_y_sum(x, y) += select(v_in, v_w * h_y(y, v_py), 0.0f);
+
+        // --- V pass: UV (half-res) ---
+        Expr uv_v_top  = nv21_top / 2.0f;
+        Expr uv_v_bot  = nv21_bot / 2.0f;
+        Expr uv_v_base = cast<int>(floor(uv_v_top));
+        Expr uv_v_fw   = cast<int>(ceil(uv_v_bot - uv_v_top)) + 1;
+
+        RDom rv_uv(0, uv_mk);
+        Expr uv_v_py_raw = uv_v_base + rv_uv.x;
+        Expr uv_v_py = clamp(uv_v_py_raw, 0, uv_h_dim - 1);
+        Expr uv_v_ol = max(cast<float>(uv_v_py_raw), uv_v_top);
+        Expr uv_v_ob = min(cast<float>(uv_v_py_raw) + 1.0f, uv_v_bot);
+        Expr uv_v_w  = max(uv_v_ob - uv_v_ol, 0.0f);
+        Expr uv_v_in = rv_uv.x < uv_v_fw;
+
+        Func v_v_sum("v_v_sum"), v_u_sum("v_u_sum");
+        v_v_sum(x, y) = 0.0f;
+        v_u_sum(x, y) = 0.0f;
+        if (code == 0 || code == 2) {
+            v_v_sum(x, y) += select(uv_v_in, uv_v_w * h_v(x, uv_v_py), 0.0f);
+            v_u_sum(x, y) += select(uv_v_in, uv_v_w * h_u(x, uv_v_py), 0.0f);
+        } else {
+            v_v_sum(x, y) += select(uv_v_in, uv_v_w * h_v(y, uv_v_py), 0.0f);
+            v_u_sum(x, y) += select(uv_v_in, uv_v_w * h_u(y, uv_v_py), 0.0f);
+        }
+
+        // ================================================================
+        // NORMALIZATION + BT.601
+        // ================================================================
+        // Total weight = h_extent * v_extent (the 2D box weight factorizes)
+        Expr y_area  = total_h * total_v;
+        Expr uv_area = max(total_h / 2.0f, 0.0001f)
+                     * max(total_v / 2.0f, 0.0001f);
+
+        Expr y_avg = v_y_sum(x, y) / y_area;
+        Expr v_avg = v_v_sum(x, y) / uv_area;
+        Expr u_avg = v_u_sum(x, y) / uv_area;
 
         // BT.601 YUV to RGB conversion (fixed-point, shift by 8)
         Expr y_int = cast<int32_t>(clamp(y_avg, 0.0f, 255.0f));
@@ -349,25 +414,29 @@ public:
         output(x, y, c) = cast<uint8_t>(clamp(
             mux(c, {r_val, g_val, b_val}), 0, 255));
 
-        // --- Schedule ---
-        y_sum.compute_at(output, x);
-        y_sum.update().reorder(r.x, r.y, x, y);
-        wt_sum.compute_at(output, x);
-        wt_sum.update();
+        // ================================================================
+        // SCHEDULE
+        // ================================================================
+        // Horizontal intermediates: store per-tile, compute per-row.
+        // Sliding-window reuse for code 0/2 where h_y is y-invariant.
+        h_y.store_at(output, y).compute_at(output, yi);
+        h_v.store_at(output, y).compute_at(output, yi);
+        h_u.store_at(output, y).compute_at(output, yi);
 
-        v_sum.compute_at(output, x);
-        v_sum.update().reorder(ruv.x, ruv.y, x, y);
-        u_sum.compute_at(output, x);
-        u_sum.update().reorder(ruv.x, ruv.y, x, y);
-        uv_wt_sum.compute_at(output, x);
-        uv_wt_sum.update();
+        // Vertical reductions: per-pixel (inherits output vectorization)
+        v_y_sum.compute_at(output, x);
+        v_y_sum.update();
+        v_v_sum.compute_at(output, x);
+        v_v_sum.update();
+        v_u_sum.compute_at(output, x);
+        v_u_sum.update();
 
         output.reorder(c, x, y)
               .bound(c, 0, 3)
               .unroll(c)
-              .split(y, y, yi, 32)
+              .split(y, y, yi, 32, TailStrategy::GuardWithIf)
               .parallel(y)
-              .vectorize(x, 8, TailStrategy::GuardWithIf);
+              .vectorize(x, 16, TailStrategy::GuardWithIf);
 
         // Input planes: contiguous rows
         y_plane.dim(0).set_stride(1);
