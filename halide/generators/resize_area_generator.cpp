@@ -1,21 +1,51 @@
+// =============================================================================
+// INTER_AREA Resize Generator (Box-Filter Area-Based Downsampling)
+// =============================================================================
+//
+// The optimal method for DOWNSCALING images. Each output pixel is the weighted
+// average of all source pixels whose footprint overlaps it.
+//
+// ## How INTER_AREA Works
+//
+// For an output pixel at position x with scale factor s (output/input ratio):
+//   - The source footprint is [x/s, (x+1)/s] — a continuous interval
+//   - Source pixels that partially overlap get proportional weight
+//
+// Example: 2x downscale (s=0.5), output pixel x=1:
+//   Source footprint: [1/0.5, 2/0.5] = [2.0, 4.0]
+//   Source pixel 2: fully inside -> weight = 1.0
+//   Source pixel 3: fully inside -> weight = 1.0
+//   Total weight = 2.0, result = (src[2] + src[3]) / 2.0
+//
+// Example: 3x downscale (s=0.333), output pixel x=0:
+//   Source footprint: [0, 3.0]
+//   Source pixels 0,1,2: all fully inside -> weight = 1.0 each
+//   Total weight = 3.0, result = (src[0] + src[1] + src[2]) / 3.0
+//
+// For non-integer ratios, edge pixels get fractional weights (partial overlap).
+//
+// ## Separable 2-Pass Implementation
+//
+// Like Gaussian blur, the 2D box filter is separable: the 2D weight is the
+// product of 1D horizontal and vertical weights. We compute:
+//   1. Horizontal pass: weighted average along x for each source row
+//   2. Vertical pass: weighted average along y over horizontal results
+//
+// This reduces O(kernel_w * kernel_h) to O(kernel_w + kernel_h) per pixel.
+//
+// ## max_kernel GeneratorParam
+//
+// Bounds the RDom (reduction domain) at compile time. Default 8 supports
+// up to 8x downscale. For larger downscale ratios, increase this value.
+// The guard condition (in_range) prevents accumulating past the actual kernel.
+//
+// =============================================================================
+
 #include "Halide.h"
 
 using namespace Halide;
 using namespace Halide::BoundaryConditions;
 
-// ---------------------------------------------------------------------------
-// INTER_AREA Resize (Box-filter area-based downsampling)
-//
-// The optimal method for downscaling images. Each output pixel is the
-// weighted average of all source pixels whose footprint overlaps it.
-// Equivalent to a box filter with kernel width = 1/scale.
-//
-// Implemented as separable 2-pass (horizontal then vertical) for efficiency.
-// For upscale (scale > 1), degrades to bilinear-like single-pixel sampling.
-//
-// max_kernel GeneratorParam bounds the RDom at compile time.
-// Default 8 supports up to 8x downscale. Increase if needed.
-// ---------------------------------------------------------------------------
 class ResizeArea : public Generator<ResizeArea> {
 public:
     GeneratorParam<int> max_kernel{"max_kernel", 8};
@@ -34,33 +64,49 @@ public:
         Func as_float("as_float");
         as_float(x, y, c) = cast<float>(clamped(x, y, c));
 
-        // --- Horizontal pass ---
-        // For output column x, the source footprint is [x/scale_x, (x+1)/scale_x]
+        // ================================================================
+        // HORIZONTAL PASS
+        // ================================================================
+        // For output column x, the source footprint is [x/scale_x, (x+1)/scale_x].
+        // inv_sx = 1/scale_x = input_width/output_width (the downscale ratio).
         Expr inv_sx = 1.0f / scale_x;
-        Expr src_left_h = cast<float>(x) / scale_x;        // left edge in source
+        Expr src_left_h = cast<float>(x) / scale_x;             // left edge in source
         Expr src_right_h = (cast<float>(x) + 1.0f) / scale_x;  // right edge in source
-        Expr base_h = cast<int>(floor(src_left_h));         // first source pixel
+        Expr base_h = cast<int>(floor(src_left_h));              // first source pixel that might overlap
 
+        // RDom: iterate over candidate source pixels.
+        // At most mk pixels can overlap (bounded by max_kernel GeneratorParam).
         RDom rh(0, mk);
-        Expr src_px_h = base_h + rh.x;
-        // Overlap of [src_px, src_px+1] with [src_left, src_right]
+        Expr src_px_h = base_h + rh.x;  // current source pixel index
+
+        // Compute overlap of source pixel [src_px, src_px+1] with footprint [src_left, src_right].
+        // The overlap width is: min(src_px+1, src_right) - max(src_px, src_left)
+        // This is 0 when there's no overlap, and 1.0 for fully-contained pixels.
         Expr overlap_left_h = max(cast<float>(src_px_h), src_left_h);
         Expr overlap_right_h = min(cast<float>(src_px_h) + 1.0f, src_right_h);
         Expr weight_h = max(overlap_right_h - overlap_left_h, 0.0f);
-        // Guard: only accumulate if within kernel extent
+
+        // Guard: only accumulate if the RDom index is within actual kernel extent.
+        // ceil(inv_sx) + 1 is the maximum number of source pixels that can overlap.
         Expr in_range_h = rh.x < cast<int>(ceil(inv_sx)) + 1;
 
+        // Accumulate weighted sum and weight sum.
+        // h_sum: sum of (weight * pixel_value) per output column
+        // h_wsum: sum of weights per output column (for normalization)
         Func h_sum("h_sum"), h_wsum("h_wsum");
         h_sum(x, y, c) = 0.0f;
         h_wsum(x, y) = 0.0f;
         h_sum(x, y, c) += select(in_range_h, weight_h * as_float(src_px_h, y, c), 0.0f);
         h_wsum(x, y) += select(in_range_h, weight_h, 0.0f);
 
+        // Normalize: divide weighted sum by total weight.
+        // max(..., 0.0001f) prevents division by zero.
         Func h_result("h_result");
         h_result(x, y, c) = h_sum(x, y, c) / max(h_wsum(x, y), 0.0001f);
 
-        // --- Vertical pass ---
-        // For output row y, the source footprint is [y/scale_y, (y+1)/scale_y]
+        // ================================================================
+        // VERTICAL PASS (same algorithm, applied to h_result along y-axis)
+        // ================================================================
         Expr inv_sy = 1.0f / scale_y;
         Expr src_top_v = cast<float>(y) / scale_y;
         Expr src_bot_v = (cast<float>(y) + 1.0f) / scale_y;
@@ -83,12 +129,16 @@ public:
             v_sum(x, y, c) / max(v_wsum(x, y), 0.0001f),
             0.0f, 255.0f));
 
-        // --- Schedule ---
-        // Horizontal intermediate computed per output tile strip
+        // ================================================================
+        // SCHEDULE
+        // ================================================================
+        // h_result: computed per output y-tile strip.
         h_result.compute_at(output, yi)
                 .reorder(c, x, y)
                 .vectorize(x, 8, TailStrategy::GuardWithIf);
 
+        // h_sum/h_wsum: computed per pixel of h_result.
+        // The update (reduction) step is scheduled with channels unrolled.
         h_sum.compute_at(h_result, x)
              .reorder(c, x, y)
              .bound(c, 0, 3)
@@ -100,6 +150,7 @@ public:
         h_wsum.compute_at(h_result, x);
         h_wsum.update();
 
+        // v_sum/v_wsum: computed per output pixel.
         v_sum.compute_at(output, x)
              .reorder(c, x, y)
              .bound(c, 0, 3)
@@ -118,7 +169,7 @@ public:
               .parallel(y)
               .vectorize(x, 8, TailStrategy::GuardWithIf);
 
-        // Interleaved layout: channel stride = 1, x stride = 3
+        // Interleaved layout constraints
         input.dim(0).set_stride(3);
         input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);
@@ -131,9 +182,9 @@ HALIDE_REGISTER_GENERATOR(ResizeArea, resize_area)
 
 // ---------------------------------------------------------------------------
 // INTER_AREA Resize — Target-size variant
-// Takes explicit target width/height instead of scale factors.
-// Same separable 2-pass box filter algorithm.
 // ---------------------------------------------------------------------------
+// Takes explicit target width/height instead of scale factors.
+// Same separable 2-pass box filter algorithm with direct coordinate mapping.
 class ResizeAreaTarget : public Generator<ResizeAreaTarget> {
 public:
     GeneratorParam<int> max_kernel{"max_kernel", 8};
@@ -158,6 +209,7 @@ public:
         Expr th = cast<float>(target_h);
 
         // --- Horizontal pass ---
+        // inv_sx = src_w / tw = how many source pixels per output pixel (horizontally)
         // Source footprint per output column: [x * src_w/tw, (x+1) * src_w/tw]
         Expr inv_sx = src_w / tw;
         Expr src_left_h = cast<float>(x) * src_w / tw;
@@ -203,7 +255,7 @@ public:
             v_sum(x, y, c) / max(v_wsum(x, y), 0.0001f),
             0.0f, 255.0f));
 
-        // --- Schedule ---
+        // --- Schedule (same as ResizeArea) ---
         h_result.compute_at(output, yi)
                 .reorder(c, x, y)
                 .vectorize(x, 8, TailStrategy::GuardWithIf);

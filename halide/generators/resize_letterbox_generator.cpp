@@ -1,21 +1,43 @@
+// =============================================================================
+// Letterbox Resize Generator (Aspect-Ratio-Preserving with Black Padding)
+// =============================================================================
+//
+// Fits an entire image into a target rectangle without cropping or distortion.
+// The image is uniformly scaled and centered, with black (0,0,0) padding
+// filling any remaining space.
+//
+// ## Algorithm
+//
+// 1. Compute uniform scale = min(target_w/src_w, target_h/src_h)
+//    This ensures the entire image fits within the target dimensions.
+//
+// 2. Compute scaled image dimensions and centering offsets:
+//    scaled_w = round(src_w * scale)
+//    scaled_h = round(src_h * scale)
+//    offset_x = (target_w - scaled_w) / 2
+//    offset_y = (target_h - scaled_h) / 2
+//
+// 3. For each output pixel (x, y):
+//    - If inside the scaled image region: bilinear sample from source
+//    - If outside (in padding area): output black (0)
+//
+// ## Letterbox vs Pillarbox
+//
+// When the source is wider than the target aspect ratio:
+//   -> Padding appears on top and bottom (letterbox, like widescreen movies)
+//
+// When the source is taller than the target aspect ratio:
+//   -> Padding appears on left and right (pillarbox)
+//
+// Common use case: ML preprocessing (e.g., 1920x1080 -> 640x640 square input)
+//
+// =============================================================================
+
 #include "Halide.h"
 
 using namespace Halide;
 using namespace Halide::BoundaryConditions;
 
-// ---------------------------------------------------------------------------
-// Letterbox Resize (Aspect-ratio-preserving bilinear resize)
-//
-// Computes a uniform scale factor so the entire source image fits within
-// the target dimensions without cropping or stretching. The image is
-// centered, with black (0,0,0) padding filling any remaining space
-// (letterbox for wide images, pillarbox for tall images).
-//
-// Guarantees:
-//   - Image composition is preserved (no crop, no distortion)
-//   - Aspect ratio is exactly maintained
-//   - Bilinear interpolation with pixel-center alignment
-// ---------------------------------------------------------------------------
 class ResizeLetterbox : public Generator<ResizeLetterbox> {
 public:
     Input<Buffer<uint8_t, 3>> input{"input"};     // src width x height x 3
@@ -30,28 +52,32 @@ public:
         Func as_float("as_float");
         as_float(x, y, c) = cast<float>(clamped(x, y, c));
 
-        // Source dimensions from buffer metadata
+        // Source dimensions from buffer metadata (resolved at runtime).
         Expr src_w = cast<float>(input.dim(0).extent());
         Expr src_h = cast<float>(input.dim(1).extent());
 
-        // Uniform scale: fit entire source into target without cropping
+        // Uniform scale: choose the smaller of the two scale factors
+        // to ensure the entire image fits (no cropping).
         Expr sx = cast<float>(target_w) / src_w;
         Expr sy = cast<float>(target_h) / src_h;
         Expr uniform_scale = min(sx, sy);
 
-        // Scaled image dimensions (rounded to int)
+        // Scaled image dimensions (rounded to nearest integer)
         Expr scaled_w = cast<int>(round(src_w * uniform_scale));
         Expr scaled_h = cast<int>(round(src_h * uniform_scale));
 
-        // Centering offsets
+        // Centering offsets: position the scaled image in the center of the target.
+        // Integer division truncates — for odd remainders, the image shifts
+        // 0.5 pixels left/up, which is acceptable for display/ML use.
         Expr offset_x = (target_w - scaled_w) / 2;
         Expr offset_y = (target_h - scaled_h) / 2;
 
-        // Check if this output pixel falls inside the scaled image region
+        // Check if this output pixel falls inside the scaled image region.
         Expr in_region = (x >= offset_x) && (x < offset_x + scaled_w) &&
                          (y >= offset_y) && (y < offset_y + scaled_h);
 
-        // Map output pixel to source coordinate (bilinear, pixel-center aligned)
+        // Map output pixel to source coordinate (bilinear, pixel-center aligned).
+        // rel_x/rel_y: position relative to the top-left of the scaled image.
         Expr rel_x = cast<float>(x - offset_x);
         Expr rel_y = cast<float>(y - offset_y);
         Expr src_x = (rel_x + 0.5f) / uniform_scale - 0.5f;
@@ -62,17 +88,20 @@ public:
         Expr fx = src_x - cast<float>(ix);
         Expr fy = src_y - cast<float>(iy);
 
-        // Promise coordinates are in valid range for repeat_edge.
+        // unsafe_promise_clamped: safe because repeat_edge already clamps,
+        // and we only evaluate this for pixels inside in_region.
         Expr ix_s = unsafe_promise_clamped(ix, -1, input.dim(0).extent());
         Expr iy_s = unsafe_promise_clamped(iy, -1, input.dim(1).extent());
 
-        // Bilinear interpolation: 4-tap (2x2 neighborhood)
+        // Bilinear interpolation (same as resize_bilinear)
         Expr val = as_float(ix_s, iy_s, c) * (1.0f - fx) * (1.0f - fy) +
                    as_float(ix_s + 1, iy_s, c) * fx * (1.0f - fy) +
                    as_float(ix_s, iy_s + 1, c) * (1.0f - fx) * fy +
                    as_float(ix_s + 1, iy_s + 1, c) * fx * fy;
 
-        // Output: interpolated pixel inside region, black outside
+        // select: image pixel if inside region, black (0) if in padding.
+        // Note: Halide may still evaluate the bilinear expression for padding
+        // pixels (speculative execution for SIMD), but the result is discarded.
         output(x, y, c) = select(in_region,
             cast<uint8_t>(clamp(val, 0.0f, 255.0f)),
             cast<uint8_t>(0));
@@ -87,7 +116,7 @@ public:
               .parallel(y)
               .vectorize(x, 8, TailStrategy::GuardWithIf);
 
-        // Interleaved layout: channel stride = 1, x stride = 3
+        // Interleaved layout constraints
         input.dim(0).set_stride(3);
         input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);

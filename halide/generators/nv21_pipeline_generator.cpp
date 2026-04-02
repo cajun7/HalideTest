@@ -10,16 +10,34 @@ using namespace Halide::BoundaryConditions;
 // inverse-rotation into one coordinate transform. Samples NV21 Y/UV once
 // with bilinear interpolation and applies BT.601 to produce RGB.
 //
-// Benefits:
-//   - Single interpolation: no halo/bleeding from double-interpolation
-//   - Single memory pass: read NV21 once, write RGB once
-//   - Maximum fusion: Halide optimizer schedules the entire pipeline
+// ## Why Fuse?
+//
+// If we chained separate operations (NV21->RGB, then rotate, then resize),
+// each step would interpolate, losing quality (halo/bleeding from double
+// interpolation) and requiring intermediate buffers. By fusing into one
+// inverse mapping, we:
+//   1. Interpolate exactly once (highest quality)
+//   2. Read NV21 once, write RGB once (minimum memory bandwidth)
+//   3. Let Halide optimize the entire pipeline together (no intermediate allocs)
+//
+// ## Inverse Mapping Chain
+//
+// For each output pixel (x, y):
+//   1. Inverse resize: output pixel -> rotated-space coordinate
+//   2. Inverse flip: undo horizontal/vertical flip
+//   3. Inverse rotation: rotated-space -> NV21 source coordinate
+//   4. Bilinear sample Y at full resolution
+//   5. Bilinear sample UV at half resolution (with pixel-index clamping)
+//   6. BT.601 limited-range conversion to RGB
 //
 // rotation_code (GeneratorParam, compile-time):
 //   0 = no rotation, 1 = 90 CW, 2 = 180, 3 = 270 CW
+//   Compile-time because it eliminates runtime branching in the hot pixel loop.
+//   Four separate .a files are generated (one per rotation).
 //
 // flip_code (runtime Input):
 //   0 = no flip, 1 = horizontal flip, 2 = vertical flip
+//   Runtime because it's a single select() per pixel (near-zero cost).
 // ---------------------------------------------------------------------------
 class NV21PipelineBilinear : public Generator<NV21PipelineBilinear> {
 public:
@@ -181,12 +199,28 @@ HALIDE_REGISTER_GENERATOR(NV21PipelineBilinear, nv21_pipeline_bilinear)
 // ---------------------------------------------------------------------------
 // Fused NV21 -> Rotate -> [Flip] -> Resize (INTER_AREA) -> RGB Pipeline
 //
-// Separable 2-pass area filtering: horizontal pass averages along NV21
-// x-axis, vertical pass averages along NV21 y-axis. The 2D box-filter
-// weight w(col,row) = w_x(col) * w_y(row) factorizes, so separability
-// is exact. For fixed rotations the source footprint stays axis-aligned.
+// Same fused pipeline concept as NV21PipelineBilinear above, but uses
+// INTER_AREA (box-filter) downsampling instead of bilinear interpolation.
+// INTER_AREA produces better quality for downscaling (no aliasing).
 //
-// Compared to the non-separable version: O(2*mk) vs O(mk^2) per pixel.
+// ## Why Separable Works Here
+//
+// The 2D box-filter weight is: w(col, row) = w_x(col) * w_y(row)
+// This factorization is exact for axis-aligned footprints. Since fixed
+// rotations (0, 90, 180, 270) always produce axis-aligned source regions,
+// separability is mathematically exact (no approximation error).
+//
+// ## Two-Pass Architecture
+//
+// Pass 1 (Horizontal): For each (h_idx, source_row), compute the weighted
+//   average along the NV21 x-axis. Produces h_y, h_v, h_u intermediates.
+//   h_idx is the output x for code 0/2, or output y for code 1/3
+//   (depending on which output axis maps to the NV21 x-axis after rotation).
+//
+// Pass 2 (Vertical): For each output (x, y), accumulate h_y/h_v/h_u
+//   along the NV21 y-axis with vertical area weights.
+//
+// Complexity: O(2*mk) vs O(mk^2) per pixel (compared to non-separable).
 //
 // max_pool GeneratorParam bounds each 1-D RDom (default 8 = up to 8x).
 // ---------------------------------------------------------------------------

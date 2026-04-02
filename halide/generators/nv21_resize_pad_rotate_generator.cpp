@@ -26,9 +26,16 @@ using namespace Halide::BoundaryConditions;
 //   5. Bilinear sample Y + UV, apply full-range BT.601
 //
 // Uses full-range BT.601 coefficients (Samsung/Android Camera default).
+// See nv21_to_rgb_full_range_generator.cpp for coefficient derivation.
 //
 // rotation_code (GeneratorParam, compile-time):
 //   0 = no rotation, 1 = 90 CW, 2 = 180, 3 = 270 CW
+//   Compile-time for the same reason as nv21_pipeline_generator.cpp:
+//   eliminates runtime branching in the hot pixel loop.
+//
+// Note: This generator uses full-range BT.601 (for Android Camera API),
+// while nv21_pipeline_generator.cpp uses limited-range BT.601.
+// Choose based on your camera's YUV output range.
 // ---------------------------------------------------------------------------
 class NV21ResizePadRotate : public Generator<NV21ResizePadRotate> {
 public:
