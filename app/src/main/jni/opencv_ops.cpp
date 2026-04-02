@@ -11,6 +11,17 @@ void nv21_to_rgb(const cv::Mat& nv21, cv::Mat& output) {
     cv::cvtColor(nv21, output, cv::COLOR_YUV2RGB_NV21);
 }
 
+void nv21_yuv444_rgb(const cv::Mat& nv21, cv::Mat& output) {
+    // OpenCV uses nearest-neighbor UV upsampling; timing comparison only.
+    cv::cvtColor(nv21, output, cv::COLOR_YUV2RGB_NV21);
+}
+
+void nv21_to_rgb_full_range(const cv::Mat& nv21, cv::Mat& output) {
+    // OpenCV's COLOR_YUV2RGB_NV21 uses limited-range coefficients.
+    // No direct full-range variant in OpenCV 3.x; timing comparison only.
+    cv::cvtColor(nv21, output, cv::COLOR_YUV2RGB_NV21);
+}
+
 void gaussian_blur_gray(const cv::Mat& input, cv::Mat& output, int kernel_size) {
     cv::GaussianBlur(input, output, cv::Size(kernel_size, kernel_size), 0);
 }
@@ -150,6 +161,60 @@ void nv21_rotate_flip_resize_rgb(const cv::Mat& nv21, cv::Mat& output,
 
     // Step 4: Resize
     cv::resize(flipped, output, cv::Size(target_w, target_h), 0, 0, interp);
+}
+
+void nv21_resize_pad_rotate(const cv::Mat& nv21, cv::Mat& output,
+                            int rotation_degrees_cw, int target_size) {
+    // Step 1: NV21 -> RGB
+    cv::Mat rgb;
+    cv::cvtColor(nv21, rgb, cv::COLOR_YUV2RGB_NV21);
+
+    // Step 2: Aspect-ratio-preserving resize
+    float scale = std::min((float)target_size / rgb.cols,
+                           (float)target_size / rgb.rows);
+    int scaled_w = (int)std::round(rgb.cols * scale);
+    int scaled_h = (int)std::round(rgb.rows * scale);
+    cv::Mat resized;
+    cv::resize(rgb, resized, cv::Size(scaled_w, scaled_h), 0, 0, cv::INTER_LINEAR);
+
+    // Step 3: Pad to square with black
+    cv::Mat padded = cv::Mat::zeros(target_size, target_size, CV_8UC3);
+    int offset_x = (target_size - scaled_w) / 2;
+    int offset_y = (target_size - scaled_h) / 2;
+    resized.copyTo(padded(cv::Rect(offset_x, offset_y, scaled_w, scaled_h)));
+
+    // Step 4: Rotate
+    switch (rotation_degrees_cw) {
+        case 90:  cv::rotate(padded, output, cv::ROTATE_90_CLOCKWISE); break;
+        case 180: cv::rotate(padded, output, cv::ROTATE_180); break;
+        case 270: cv::rotate(padded, output, cv::ROTATE_90_COUNTERCLOCKWISE); break;
+        default:  output = padded; break;
+    }
+}
+
+void seg_argmax(const cv::Mat& input, cv::Mat& output, int num_classes) {
+    // input: planar float data reinterpreted as single-channel rows
+    // Each class plane is h*w floats laid out contiguously.
+    int h = input.rows;
+    int w = input.cols;
+    output = cv::Mat(h, w, CV_8UC1);
+
+    const float* data = (const float*)input.data;
+    for (int y = 0; y < h; y++) {
+        uint8_t* out_row = output.ptr<uint8_t>(y);
+        for (int x = 0; x < w; x++) {
+            float max_val = data[0 * h * w + y * w + x];
+            int max_idx = 0;
+            for (int c = 1; c < num_classes; c++) {
+                float val = data[c * h * w + y * w + x];
+                if (val > max_val) {
+                    max_val = val;
+                    max_idx = c;
+                }
+            }
+            out_row[x] = (uint8_t)max_idx;
+        }
+    }
 }
 
 } // namespace opencv_ops

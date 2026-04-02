@@ -129,6 +129,40 @@ public class NativeBridge {
                                                    boolean useArea, boolean useHalide);
 
     /**
+     * NV21 to RGB with bilinear UV upsampling (YUV444 quality).
+     * Higher quality than nv21ToRgb (which uses nearest-neighbor UV).
+     * @return execution time in microseconds
+     */
+    public static native long nv21Yuv444Rgb(byte[] nv21Data, int width, int height,
+                                             Bitmap outputBitmap, boolean useHalide);
+
+    /**
+     * NV21 to RGB using full-range BT.601 (Android Camera / JFIF).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ToRgbFullRange(byte[] nv21Data, int width, int height,
+                                                  Bitmap outputBitmap, boolean useHalide);
+
+    /**
+     * Fused NV21 -> Resize -> Pad -> Rotate for ML preprocessing.
+     * Produces a square RGB output (targetSize x targetSize).
+     * @param rotationDegreesCW 0, 90, 180, or 270
+     * @param targetSize side length of the square output
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizePadRotate(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                   int rotationDegreesCW, int targetSize,
+                                                   boolean useHalide);
+
+    /**
+     * Segmentation argmax on synthetic float data.
+     * @param numClasses number of segmentation classes
+     * @return execution time in microseconds
+     */
+    public static native long segArgmax(int width, int height, int numClasses,
+                                         boolean useHalide);
+
+    /**
      * Append a CSV line to a file on device storage.
      */
     public static native void appendCsv(String filePath, String csvLine);

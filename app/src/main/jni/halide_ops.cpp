@@ -56,6 +56,12 @@
 #include "nv21_pipeline_area_180.h"
 #include "nv21_pipeline_area_270cw.h"
 #include "seg_argmax.h"
+#include "nv21_yuv444_rgb.h"
+#include "nv21_to_rgb_full_range.h"
+#include "nv21_resize_pad_rotate_none.h"
+#include "nv21_resize_pad_rotate_90cw.h"
+#include "nv21_resize_pad_rotate_180.h"
+#include "nv21_resize_pad_rotate_270cw.h"
 
 namespace halide_ops {
 
@@ -75,6 +81,18 @@ int nv21_to_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
                 Halide::Runtime::Buffer<uint8_t>& output) {
     // :: prefix calls the global AOT-generated function, not this wrapper.
     return ::nv21_to_rgb(y_plane, uv_plane, output);
+}
+
+int nv21_yuv444_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                    Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                    Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_yuv444_rgb(y_plane, uv_plane, output);
+}
+
+int nv21_to_rgb_full_range(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                           Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                           Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_to_rgb_full_range(y_plane, uv_plane, output);
 }
 
 // ---------------------------------------------------------------------------
@@ -312,6 +330,32 @@ int nv21_rotate_flip_resize_area_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                      Halide::Runtime::Buffer<uint8_t>& output) {
     return dispatch_nv21_area(y_plane, uv_plane, rotation_degrees_cw,
                               flip_code, target_w, target_h, output);
+}
+
+// ---------------------------------------------------------------------------
+// Fused NV21 -> Resize -> Pad -> Rotate Dispatch
+// ---------------------------------------------------------------------------
+
+static int dispatch_nv21_resize_pad_rotate(Halide::Runtime::Buffer<uint8_t>& y,
+                                           Halide::Runtime::Buffer<uint8_t>& uv,
+                                           int rotation_cw, int target_size,
+                                           Halide::Runtime::Buffer<uint8_t>& out) {
+    switch (rotation_cw) {
+        case 0:   return ::nv21_resize_pad_rotate_none(y, uv, target_size, out);
+        case 90:  return ::nv21_resize_pad_rotate_90cw(y, uv, target_size, out);
+        case 180: return ::nv21_resize_pad_rotate_180(y, uv, target_size, out);
+        case 270: return ::nv21_resize_pad_rotate_270cw(y, uv, target_size, out);
+        default:  return -1;
+    }
+}
+
+int nv21_resize_pad_rotate(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                           Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                           int rotation_degrees_cw,
+                           int target_size,
+                           Halide::Runtime::Buffer<uint8_t>& output) {
+    return dispatch_nv21_resize_pad_rotate(y_plane, uv_plane,
+                                           rotation_degrees_cw, target_size, output);
 }
 
 // ---------------------------------------------------------------------------

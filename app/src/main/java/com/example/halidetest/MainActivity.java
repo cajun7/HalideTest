@@ -259,6 +259,29 @@ public class MainActivity extends AppCompatActivity {
                         90, 0, 1280, 720, true, halide);
                 break;
             }
+            case "NV21 YUV444 RGB (bilinear UV)": {
+                byte[] nv21 = createTestNv21(width, height);
+                Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.nv21Yuv444Rgb(nv21, width, height, outputBitmap, halide);
+                break;
+            }
+            case "NV21 to RGB Full-Range": {
+                byte[] nv21 = createTestNv21(width, height);
+                Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.nv21ToRgbFullRange(nv21, width, height, outputBitmap, halide);
+                break;
+            }
+            case "NV21 Resize+Pad+Rotate (384)": {
+                byte[] nv21 = createTestNv21(width, height);
+                int targetSize = 384;
+                op = (halide) -> NativeBridge.nv21ResizePadRotate(nv21, width, height,
+                        90, targetSize, halide);
+                break;
+            }
+            case "Seg Argmax (8 classes)": {
+                op = (halide) -> NativeBridge.segArgmax(width, height, 8, halide);
+                break;
+            }
             default: {
                 Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
                 op = (halide) -> 0L;

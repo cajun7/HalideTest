@@ -21,6 +21,10 @@
         <item>Resize Area Target (720p)</item>
         <item>NV21 Pipeline Bilinear (rotate+resize)</item>
         <item>NV21 Pipeline Area (rotate+resize)</item>
+        <item>NV21 YUV444 RGB (bilinear UV)</item>
+        <item>NV21 to RGB Full-Range</item>
+        <item>NV21 Resize+Pad+Rotate (384)</item>
+        <item>Seg Argmax (8 classes)</item>
     </string-array>
 
     <string-array name="resolutions">

@@ -71,6 +71,23 @@ int nv21_to_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
                 Halide::Runtime::Buffer<uint8_t>& uv_plane,
                 Halide::Runtime::Buffer<uint8_t>& output);
 
+// Convert NV21 to RGB with bilinear UV upsampling (YUV444 quality).
+// Interpolates UV from half-res to full-res before BT.601 conversion,
+// producing smoother chroma transitions than nearest-neighbor.
+//
+// Same inputs/outputs as nv21_to_rgb.
+int nv21_yuv444_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                    Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                    Halide::Runtime::Buffer<uint8_t>& output);
+
+// Convert NV21 to RGB using full-range BT.601 (JFIF/Android Camera).
+// Uses Y:[0,255] UV:[0,255] instead of limited-range Y:[16,235] UV:[16,240].
+//
+// Same inputs/outputs as nv21_to_rgb.
+int nv21_to_rgb_full_range(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                           Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                           Halide::Runtime::Buffer<uint8_t>& output);
+
 // ---------------------------------------------------------------------------
 // Blur Operations
 // ---------------------------------------------------------------------------
@@ -287,6 +304,21 @@ int nv21_rotate_flip_resize_area_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                      int rotation_degrees_cw, int flip_code,
                                      int target_w, int target_h,
                                      Halide::Runtime::Buffer<uint8_t>& output);
+
+// ---------------------------------------------------------------------------
+// Fused NV21 -> Resize -> Pad -> Rotate (ML Preprocessing)
+// ---------------------------------------------------------------------------
+// Produces a square RGB output (target_size x target_size x 3).
+// Uses full-range BT.601, bilinear resize, aspect-ratio-preserving
+// padding (letterbox), and optional rotation.
+//
+// rotation_degrees_cw: Must be exactly 0, 90, 180, or 270 (returns -1 otherwise)
+// target_size: side length of the square output
+int nv21_resize_pad_rotate(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                           Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                           int rotation_degrees_cw,
+                           int target_size,
+                           Halide::Runtime::Buffer<uint8_t>& output);
 
 // ---------------------------------------------------------------------------
 // Segmentation Post-processing

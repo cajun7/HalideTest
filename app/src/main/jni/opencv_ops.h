@@ -12,6 +12,12 @@ void rgb_bgr(const cv::Mat& input, cv::Mat& output);
 // NV21 -> RGB conversion (input is single-channel h*3/2 x w NV21 frame)
 void nv21_to_rgb(const cv::Mat& nv21, cv::Mat& output);
 
+// NV21 -> RGB with bilinear UV upsampling (timing reference; OpenCV uses nearest-neighbor)
+void nv21_yuv444_rgb(const cv::Mat& nv21, cv::Mat& output);
+
+// NV21 -> RGB full-range BT.601 (timing reference; OpenCV uses limited-range)
+void nv21_to_rgb_full_range(const cv::Mat& nv21, cv::Mat& output);
+
 // Gaussian blur on single-channel
 void gaussian_blur_gray(const cv::Mat& input, cv::Mat& output, int kernel_size);
 
@@ -58,5 +64,12 @@ void flip_vertical(const cv::Mat& input, cv::Mat& output);
 void nv21_rotate_flip_resize_rgb(const cv::Mat& nv21, cv::Mat& output,
                                  int rotation_degrees_cw, int flip_code,
                                  int target_w, int target_h, int interp);
+
+// NV21 -> Resize -> Pad -> Rotate for ML preprocessing (chained OpenCV steps)
+void nv21_resize_pad_rotate(const cv::Mat& nv21, cv::Mat& output,
+                            int rotation_degrees_cw, int target_size);
+
+// Segmentation argmax across channels (per-pixel class selection)
+void seg_argmax(const cv::Mat& input, cv::Mat& output, int num_classes);
 
 } // namespace opencv_ops
