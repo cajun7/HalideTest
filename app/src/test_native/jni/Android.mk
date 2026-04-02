@@ -37,7 +37,8 @@ LOCAL_SRC_FILES := \
     ../test_target_dispatch.cpp \
     ../test_nv21_full_range.cpp \
     ../test_nv21_yuv444.cpp \
-    ../test_nv21_resize_pad_rotate.cpp
+    ../test_nv21_resize_pad_rotate.cpp \
+    ../test_seg_argmax.cpp
 
 LOCAL_C_INCLUDES += \
     $(HALIDE_INCLUDE) \
@@ -83,6 +84,7 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_90cw.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_180.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_270cw.a \
+    $(HALIDE_GEN_DIR)/seg_argmax.a \
     $(HALIDE_GEN_DIR)/halide_runtime.a
 
 # GoogleTest requires RTTI

@@ -111,6 +111,8 @@ MULTI_TARGET_RUNS=(
     "nv21_resize_pad_rotate_generator -g nv21_resize_pad_rotate -f nv21_resize_pad_rotate_90cw rotation_code=1"
     "nv21_resize_pad_rotate_generator -g nv21_resize_pad_rotate -f nv21_resize_pad_rotate_180 rotation_code=2"
     "nv21_resize_pad_rotate_generator -g nv21_resize_pad_rotate -f nv21_resize_pad_rotate_270cw rotation_code=3"
+    # Segmentation post-processing: argmax across class logits
+    "seg_argmax_generator -g seg_argmax -f seg_argmax num_classes=8"
 )
 
 # Generators with no arithmetic benefit (pure index/channel remapping)

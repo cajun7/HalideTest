@@ -28,6 +28,7 @@
 #include "nv21_pipeline_area_90cw.h"
 #include "nv21_pipeline_area_180.h"
 #include "nv21_pipeline_area_270cw.h"
+#include "seg_argmax.h"
 
 namespace halide_ops {
 
@@ -216,6 +217,11 @@ int nv21_rotate_flip_resize_area_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                      Halide::Runtime::Buffer<uint8_t>& output) {
     return dispatch_nv21_area(y_plane, uv_plane, rotation_degrees_cw,
                               flip_code, target_w, target_h, output);
+}
+
+int seg_argmax(Halide::Runtime::Buffer<float>& input,
+               Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::seg_argmax(input, output);
 }
 
 } // namespace halide_ops

@@ -127,4 +127,8 @@ int nv21_rotate_flip_resize_area_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                      int target_w, int target_h,
                                      Halide::Runtime::Buffer<uint8_t>& output);
 
+// Segmentation post-processing: argmax across class logits (planar float32 -> uint8 class mask)
+int seg_argmax(Halide::Runtime::Buffer<float>& input,
+               Halide::Runtime::Buffer<uint8_t>& output);
+
 } // namespace halide_ops
