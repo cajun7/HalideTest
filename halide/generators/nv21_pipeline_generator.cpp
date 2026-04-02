@@ -112,21 +112,31 @@ public:
         Expr uv_fx = uv_sx - cast<float>(uv_ix);
         Expr uv_fy = uv_sy - cast<float>(uv_iy);
 
-        // Bilinear interpolation of V (at even byte offsets: uv_ix*2)
-        Expr v00 = uv_float(uv_ix * 2, uv_iy);
-        Expr v10 = uv_float((uv_ix + 1) * 2, uv_iy);
-        Expr v01 = uv_float(uv_ix * 2, uv_iy + 1);
-        Expr v11 = uv_float((uv_ix + 1) * 2, uv_iy + 1);
+        // Clamp UV pixel indices to valid range before computing byte offsets.
+        // This avoids repeat_edge clamping byte offsets, which could pick up
+        // U instead of V (or vice versa) at the right edge of the UV plane.
+        Expr uv_w_half = uv_plane.dim(0).extent() / 2;
+        Expr uv_h_dim = uv_plane.dim(1).extent();
+        Expr ix0 = clamp(uv_ix, 0, uv_w_half - 1);
+        Expr ix1 = clamp(uv_ix + 1, 0, uv_w_half - 1);
+        Expr iy0 = clamp(uv_iy, 0, uv_h_dim - 1);
+        Expr iy1 = clamp(uv_iy + 1, 0, uv_h_dim - 1);
+
+        // V at even byte offsets within each UV row
+        Expr v00 = uv_float(ix0 * 2, iy0);
+        Expr v10 = uv_float(ix1 * 2, iy0);
+        Expr v01 = uv_float(ix0 * 2, iy1);
+        Expr v11 = uv_float(ix1 * 2, iy1);
         Expr v_interp = v00 * (1.0f - uv_fx) * (1.0f - uv_fy) +
                         v10 * uv_fx * (1.0f - uv_fy) +
                         v01 * (1.0f - uv_fx) * uv_fy +
                         v11 * uv_fx * uv_fy;
 
-        // Bilinear interpolation of U (at odd byte offsets: uv_ix*2+1)
-        Expr u00 = uv_float(uv_ix * 2 + 1, uv_iy);
-        Expr u10 = uv_float((uv_ix + 1) * 2 + 1, uv_iy);
-        Expr u01 = uv_float(uv_ix * 2 + 1, uv_iy + 1);
-        Expr u11 = uv_float((uv_ix + 1) * 2 + 1, uv_iy + 1);
+        // U at odd byte offsets within each UV row
+        Expr u00 = uv_float(ix0 * 2 + 1, iy0);
+        Expr u10 = uv_float(ix1 * 2 + 1, iy0);
+        Expr u01 = uv_float(ix0 * 2 + 1, iy1);
+        Expr u11 = uv_float(ix1 * 2 + 1, iy1);
         Expr u_interp = u00 * (1.0f - uv_fx) * (1.0f - uv_fy) +
                         u10 * uv_fx * (1.0f - uv_fy) +
                         u01 * (1.0f - uv_fx) * uv_fy +

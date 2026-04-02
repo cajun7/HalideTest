@@ -30,7 +30,7 @@ Step 1: Download dependencies (one-time)
 # Download Halide 21.0.0 SDK
 bash scripts/setup_halide.sh
 
-# Download OpenCV 4.9.0 Android SDK
+# Download OpenCV 3.4.16 Android SDK
 bash scripts/setup_opencv.sh
 Step 2: Compile Halide generators (host → AOT cross-compile)
 

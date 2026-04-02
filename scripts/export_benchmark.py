@@ -500,7 +500,6 @@ def build_charts(wb, summary):
         return
 
     # --- Helper data area (columns J-N) for chart data ---
-    # Write labels and data for the charts
     ws.cell(row=1, column=10, value="Operation")
     ws.cell(row=1, column=11, value="Halide Median (us)")
     ws.cell(row=1, column=12, value="OpenCV Median (us)")
@@ -509,9 +508,6 @@ def build_charts(wb, summary):
 
     for i, s in enumerate(summary):
         r = i + 2
-        label = s["op"]
-        if s["res"]:
-            label += f"\n({s['res']})"
         ws.cell(row=r, column=10, value=s["op"])
         ws.cell(row=r, column=11, value=s["h_med"])
         ws.cell(row=r, column=12, value=s["o_med"])
@@ -519,17 +515,26 @@ def build_charts(wb, summary):
         ws.cell(row=r, column=14, value=1.0)
 
     nrows = len(summary) + 1
+    n = len(summary)
 
-    # --- Chart 1: Median comparison (grouped bar) ---
+    # Hide helper data columns
+    for col_letter in ['J', 'K', 'L', 'M', 'N']:
+        ws.column_dimensions[col_letter].hidden = True
+
+    # --- Chart 1: Median comparison (horizontal grouped bar) ---
     chart1 = BarChart()
-    chart1.type = "col"
+    chart1.type = "bar"
     chart1.grouping = "clustered"
     chart1.title = "Halide vs OpenCV - Median Execution Time"
-    chart1.y_axis.title = "Time (microseconds)"
-    chart1.x_axis.title = "Operation"
+    chart1.x_axis.title = "Time (microseconds)"
+    chart1.x_axis.numFmt = "#,##0"
+    chart1.y_axis.title = None
+    chart1.y_axis.tickLblPos = "low"
     chart1.style = 10
-    chart1.width = 32
-    chart1.height = 16
+    chart1.width = 28
+    chart1.height = max(10, n * 1.5)
+    chart1.gapWidth = 80
+    chart1.legend.position = "b"
 
     halide_data = Reference(ws, min_col=11, min_row=1, max_row=nrows)
     opencv_data = Reference(ws, min_col=12, min_row=1, max_row=nrows)
@@ -542,39 +547,63 @@ def build_charts(wb, summary):
     chart1.series[0].graphicalProperties.solidFill = "70AD47"  # Green for Halide
     chart1.series[1].graphicalProperties.solidFill = "ED7D31"  # Orange for OpenCV
 
-    # Rotate x-axis labels for readability
-    chart1.x_axis.tickLblPos = "low"
-    chart1.x_axis.txPr = None  # Let Excel auto-rotate
+    # Data labels on bars
+    for s in chart1.series:
+        s.dLbls = DataLabelList()
+        s.dLbls.showVal = True
+        s.dLbls.numFmt = "#,##0"
+        s.dLbls.showCatName = False
+        s.dLbls.showSerName = False
 
     ws.add_chart(chart1, "A1")
 
-    # --- Chart 2: Speedup factor with 1.0x reference line ---
+    # --- Chart 2: Speedup factor (horizontal bar) with 1.0x reference ---
+    from openpyxl.chart import LineChart
+
     chart2 = BarChart()
-    chart2.type = "col"
+    chart2.type = "bar"
     chart2.title = "Speedup Factor (OpenCV / Halide)"
-    chart2.y_axis.title = "Speedup (x)"
+    chart2.x_axis.title = "Speedup (x)"
+    chart2.x_axis.numFmt = "0.0"
+    chart2.y_axis.title = None
+    chart2.y_axis.tickLblPos = "low"
     chart2.style = 10
-    chart2.width = 32
-    chart2.height = 16
+    chart2.width = 28
+    chart2.height = max(10, n * 1.5)
+    chart2.gapWidth = 100
+    chart2.legend.position = "b"
 
     speedup_data = Reference(ws, min_col=13, min_row=1, max_row=nrows)
     speedup_cats = Reference(ws, min_col=10, min_row=2, max_row=nrows)
     chart2.add_data(speedup_data, titles_from_data=True)
     chart2.set_categories(speedup_cats)
-    chart2.series[0].graphicalProperties.solidFill = "4472C4"
 
-    # Add 1.0x reference line as a second series
-    from openpyxl.chart import LineChart
+    # Conditional coloring: green if Halide wins, red if OpenCV wins
+    for i, s in enumerate(summary):
+        pt = DataPoint(idx=i)
+        color = "70AD47" if s["speedup"] >= 1.0 else "FF4444"
+        pt.graphicalProperties.solidFill = color
+        chart2.series[0].data_points.append(pt)
+
+    # Data labels on speedup bars
+    chart2.series[0].dLbls = DataLabelList()
+    chart2.series[0].dLbls.showVal = True
+    chart2.series[0].dLbls.numFmt = '0.00"x"'
+    chart2.series[0].dLbls.showCatName = False
+    chart2.series[0].dLbls.showSerName = False
+
+    # Add 1.0x reference line
     line = LineChart()
     ref_data = Reference(ws, min_col=14, min_row=1, max_row=nrows)
     line.add_data(ref_data, titles_from_data=True)
     line.series[0].graphicalProperties.line.solidFill = "FF0000"
-    line.series[0].graphicalProperties.line.width = 20000  # EMUs (~2pt)
+    line.series[0].graphicalProperties.line.width = 25000
+    line.series[0].graphicalProperties.line.dashStyle = "dash"
     line.series[0].graphicalProperties.noFill = True
-    # Combine bar + line
     chart2 += line
 
-    ws.add_chart(chart2, "A18")
+    chart2_anchor_row = max(18, int(chart1.height) + 2)
+    ws.add_chart(chart2, f"A{chart2_anchor_row}")
 
 
 def build_raw_data(wb, rows):

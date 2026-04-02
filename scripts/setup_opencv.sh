@@ -3,13 +3,13 @@
 # Supports multiple versions side-by-side via OPENCV_VERSION env var.
 #
 # Usage:
-#   bash scripts/setup_opencv.sh                          # 4.9.0 (default)
-#   OPENCV_VERSION=3.4.16 bash scripts/setup_opencv.sh    # 3.4.16
+#   bash scripts/setup_opencv.sh                          # 3.4.16 (default)
+#   OPENCV_VERSION=4.9.0 bash scripts/setup_opencv.sh     # 4.9.0
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OPENCV_DIR="${SCRIPT_DIR}/../opencv"
-VERSION="${OPENCV_VERSION:-4.9.0}"
+VERSION="${OPENCV_VERSION:-3.4.16}"
 OPENCV_URL="https://github.com/opencv/opencv/releases/download/${VERSION}/opencv-${VERSION}-android-sdk.zip"
 ZIPFILE="/tmp/opencv-${VERSION}-android-sdk.zip"
 INSTALL_DIR="${OPENCV_DIR}/${VERSION}"

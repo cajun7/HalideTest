@@ -206,3 +206,85 @@ inline std::vector<std::pair<int, int>> get_test_resolutions() {
         {1920, 1080},
     };
 }
+
+// ---------------------------------------------------------------------------
+// Image dump utilities (for visual debugging, gated by env var)
+// ---------------------------------------------------------------------------
+
+// Check if image dumping is enabled via HALIDE_DUMP_IMAGES=1 environment variable.
+inline bool dump_enabled() {
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char* val = getenv("HALIDE_DUMP_IMAGES");
+        enabled = (val && val[0] == '1') ? 1 : 0;
+    }
+    return enabled == 1;
+}
+
+// Write a 3-channel Halide RGB buffer as a PPM file.
+inline bool dump_rgb_to_ppm(const Halide::Runtime::Buffer<uint8_t>& buf,
+                            const char* path) {
+    if (buf.channels() < 3) return false;
+    FILE* f = fopen(path, "wb");
+    if (!f) return false;
+    fprintf(f, "P6\n%d %d\n255\n", buf.width(), buf.height());
+    for (int y = 0; y < buf.height(); y++)
+        for (int x = 0; x < buf.width(); x++)
+            for (int c = 0; c < 3; c++)
+                fputc(buf(x, y, c), f);
+    fclose(f);
+    return true;
+}
+
+// Write a single-channel buffer (Y plane) as a PGM file.
+inline bool dump_gray_to_pgm(const Halide::Runtime::Buffer<uint8_t>& buf,
+                             const char* path) {
+    FILE* f = fopen(path, "wb");
+    if (!f) return false;
+    fprintf(f, "P5\n%d %d\n255\n", buf.width(), buf.height());
+    for (int y = 0; y < buf.height(); y++)
+        for (int x = 0; x < buf.width(); x++)
+            fputc(buf(x, y), f);
+    fclose(f);
+    return true;
+}
+
+// Write an OpenCV Mat (BGR or RGB) as a PPM file.
+inline bool dump_mat_to_ppm(const cv::Mat& mat, const char* path,
+                            bool is_bgr = true) {
+    if (mat.channels() < 3) return false;
+    FILE* f = fopen(path, "wb");
+    if (!f) return false;
+    fprintf(f, "P6\n%d %d\n255\n", mat.cols, mat.rows);
+    for (int y = 0; y < mat.rows; y++)
+        for (int x = 0; x < mat.cols; x++) {
+            cv::Vec3b px = mat.at<cv::Vec3b>(y, x);
+            if (is_bgr) { fputc(px[2], f); fputc(px[1], f); fputc(px[0], f); }
+            else         { fputc(px[0], f); fputc(px[1], f); fputc(px[2], f); }
+        }
+    fclose(f);
+    return true;
+}
+
+// Conditional dump: only writes when dump is enabled AND iteration == 0.
+// label is used to construct filename: /data/local/tmp/halide_dump_<label>.ppm
+inline void dump_if_first(const Halide::Runtime::Buffer<uint8_t>& buf,
+                          const char* label, int iteration) {
+    if (iteration != 0 || !dump_enabled()) return;
+    char path[512];
+    snprintf(path, sizeof(path), "/data/local/tmp/halide_dump_%s.ppm", label);
+    if (dump_rgb_to_ppm(buf, path)) {
+        printf("  [DUMP] Wrote %s (%dx%d)\n", path, buf.width(), buf.height());
+    }
+}
+
+// Conditional dump for OpenCV Mat.
+inline void dump_mat_if_first(const cv::Mat& mat, const char* label,
+                              int iteration, bool is_bgr = true) {
+    if (iteration != 0 || !dump_enabled()) return;
+    char path[512];
+    snprintf(path, sizeof(path), "/data/local/tmp/halide_dump_%s.ppm", label);
+    if (dump_mat_to_ppm(mat, path, is_bgr)) {
+        printf("  [DUMP] Wrote %s (%dx%d)\n", path, mat.cols, mat.rows);
+    }
+}

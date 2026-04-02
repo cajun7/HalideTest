@@ -10,7 +10,7 @@ OPENCV_ANDROID_SDK := $(LOCAL_PATH)/../../../../opencv/$(OPENCV_VERSION)/OpenCV-
 
 # ---------------------------------------------------------------
 # Import OpenCV as STATIC library.
-# Version selected via OPENCV_VERSION (default 4.9.0).
+# Version selected via OPENCV_VERSION (default 3.4.16).
 # OpenCV.mk calls CLEAR_VARS internally, so LOCAL_MODULE etc.
 # must be set AFTER this include. Use += to append to OpenCV's variables.
 # ---------------------------------------------------------------
@@ -34,7 +34,10 @@ LOCAL_SRC_FILES := \
     ../test_rotate.cpp \
     ../test_flip.cpp \
     ../test_fused_pipeline.cpp \
-    ../test_target_dispatch.cpp
+    ../test_target_dispatch.cpp \
+    ../test_nv21_full_range.cpp \
+    ../test_nv21_yuv444.cpp \
+    ../test_nv21_resize_pad_rotate.cpp
 
 LOCAL_C_INCLUDES += \
     $(HALIDE_INCLUDE) \
@@ -74,6 +77,12 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_pipeline_area_90cw.a \
     $(HALIDE_GEN_DIR)/nv21_pipeline_area_180.a \
     $(HALIDE_GEN_DIR)/nv21_pipeline_area_270cw.a \
+    $(HALIDE_GEN_DIR)/nv21_to_rgb_full_range.a \
+    $(HALIDE_GEN_DIR)/nv21_yuv444_rgb.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_none.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_90cw.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_180.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_270cw.a \
     $(HALIDE_GEN_DIR)/halide_runtime.a
 
 # GoogleTest requires RTTI

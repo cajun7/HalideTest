@@ -83,7 +83,7 @@ public:
         output.reorder(c, x, y)
               .bound(c, 0, 3)
               .unroll(c)
-              .split(y, y, yi, 32)
+              .split(y, y, yi, 32, TailStrategy::GuardWithIf)
               .parallel(y)
               .vectorize(x, 8, TailStrategy::GuardWithIf);
 

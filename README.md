@@ -1,6 +1,6 @@
 # HalideTest — Halide vs OpenCV Android Benchmark
 
-Android NDK benchmark app comparing **Halide AOT-compiled** image processing pipelines against **OpenCV 4.9.0** on arm64 devices.
+Android NDK benchmark app comparing **Halide AOT-compiled** image processing pipelines against **OpenCV 3.4.16** on arm64 devices.
 
 ---
 
@@ -72,7 +72,7 @@ echo "ndk.dir=$HOME/Library/Android/sdk/ndk/27.1.12297006" >> local.properties
 # Halide 21.0.0 SDK (host compiler + includes)
 bash scripts/setup_halide.sh
 
-# OpenCV 4.9.0 Android SDK (static libraries)
+# OpenCV 3.4.16 Android SDK (static libraries)
 bash scripts/setup_opencv.sh
 ```
 
@@ -227,7 +227,7 @@ Halide/
 │   └── generated/arm64-v8a/     # (gitignored) .a + .h output
 │
 ├── opencv/
-│   └── OpenCV-android-sdk/      # (gitignored) OpenCV 4.9.0 SDK
+│   └── OpenCV-android-sdk/      # (gitignored) OpenCV 3.4.16 SDK
 │
 ├── app/src/main/
 │   ├── jni/                     # Native C++ (JNI bridge, Halide/OpenCV wrappers)

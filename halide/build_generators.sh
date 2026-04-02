@@ -102,6 +102,15 @@ MULTI_TARGET_RUNS=(
     "nv21_pipeline_generator -g nv21_pipeline_area -f nv21_pipeline_area_90cw rotation_code=1"
     "nv21_pipeline_generator -g nv21_pipeline_area -f nv21_pipeline_area_180 rotation_code=2"
     "nv21_pipeline_generator -g nv21_pipeline_area -f nv21_pipeline_area_270cw rotation_code=3"
+    # Full-range BT.601 NV21 to RGB (Samsung/Android Camera)
+    "nv21_to_rgb_full_range_generator -g nv21_to_rgb_full_range -f nv21_to_rgb_full_range"
+    # NV21 -> YUV444 (bilinear UV upsample) -> RGB
+    "nv21_yuv444_rgb_generator -g nv21_yuv444_rgb -f nv21_yuv444_rgb"
+    # Fused NV21 -> Resize -> RGB -> Pad -> Rotate (4 rotation variants)
+    "nv21_resize_pad_rotate_generator -g nv21_resize_pad_rotate -f nv21_resize_pad_rotate_none rotation_code=0"
+    "nv21_resize_pad_rotate_generator -g nv21_resize_pad_rotate -f nv21_resize_pad_rotate_90cw rotation_code=1"
+    "nv21_resize_pad_rotate_generator -g nv21_resize_pad_rotate -f nv21_resize_pad_rotate_180 rotation_code=2"
+    "nv21_resize_pad_rotate_generator -g nv21_resize_pad_rotate -f nv21_resize_pad_rotate_270cw rotation_code=3"
 )
 
 # Generators with no arithmetic benefit (pure index/channel remapping)

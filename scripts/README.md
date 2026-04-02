@@ -45,7 +45,7 @@ bash scripts/build_and_test.sh apk
 bash scripts/build_and_test.sh apk --install
 
 # Build with a specific OpenCV version
-bash scripts/build_and_test.sh run --opencv=4.9.0
+bash scripts/build_and_test.sh run --opencv=3.4.16
 ```
 
 ### Run Tests
