@@ -578,6 +578,31 @@ public class MainActivity extends AppCompatActivity {
                 op = (halide) -> NativeBridge.segArgmax(w, h, 8, halide);
                 break;
             }
+            case "Seg Portrait Blur (r=8)": {
+                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.segPortraitBlur(inputBitmap, outputBitmap, 8, halide);
+                or.outputBitmap = outputBitmap;
+                break;
+            }
+            case "Seg Background Replace": {
+                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                Bitmap bgBitmap = createTestBitmap(w, h);
+                op = (halide) -> NativeBridge.segBgReplace(inputBitmap, bgBitmap, outputBitmap, halide);
+                or.outputBitmap = outputBitmap;
+                break;
+            }
+            case "Seg Color Style": {
+                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.segColorStyle(inputBitmap, outputBitmap, halide);
+                or.outputBitmap = outputBitmap;
+                break;
+            }
+            case "Seg Depth Blur (3 zones)": {
+                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.segDepthBlur(inputBitmap, outputBitmap, 3, halide);
+                or.outputBitmap = outputBitmap;
+                break;
+            }
             default: {
                 Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
                 op = (halide) -> 0L;

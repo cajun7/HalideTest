@@ -424,4 +424,68 @@ int nv21_resize_rgb_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                       int target_w, int target_h,
                                       Halide::Runtime::Buffer<uint8_t>& output);
 
+// ---------------------------------------------------------------------------
+// Segmentation-Guided Pipelines
+// ---------------------------------------------------------------------------
+
+// Portrait mode: seg-guided selective disc blur with feathered alpha blending.
+// Keeps foreground (fg_class) sharp, blurs background with disc bokeh kernel.
+//
+// input:        RGB interleaved (W × H × 3)
+// seg_mask:     uint8 class indices, any resolution (bilinear-upsampled internally)
+// fg_class:     which class is foreground (e.g., 15 = "person")
+// blur_radius:  disc blur radius (0 = no blur, <= 12 default max)
+// edge_softness: feathering control (1.0 = linear, 3-5 = natural, >10 = hard)
+// output:       RGB interleaved (same size as input)
+int seg_portrait_blur(Halide::Runtime::Buffer<uint8_t>& input,
+                      Halide::Runtime::Buffer<uint8_t>& seg_mask,
+                      int fg_class, int blur_radius, float edge_softness,
+                      Halide::Runtime::Buffer<uint8_t>& output);
+
+// Background replacement: composites foreground onto arbitrary background image.
+// Uses seg_mask to determine foreground regions with feathered edges.
+//
+// fg_image:     Camera frame, RGB interleaved (W × H × 3)
+// bg_image:     Replacement background, RGB interleaved, any resolution
+//               (bilinear-resized to match fg internally)
+// seg_mask:     uint8 class indices, any resolution
+// fg_class:     foreground class index
+// edge_softness: feathering control
+// output:       RGB interleaved (same size as fg_image)
+int seg_bg_replace(Halide::Runtime::Buffer<uint8_t>& fg_image,
+                   Halide::Runtime::Buffer<uint8_t>& bg_image,
+                   Halide::Runtime::Buffer<uint8_t>& seg_mask,
+                   int fg_class, float edge_softness,
+                   Halide::Runtime::Buffer<uint8_t>& output);
+
+// Selective color grading: per-class LUT-based color transform.
+// Each segmentation class gets its own linear color grade (gain, bias, blend).
+//
+// input:        RGB interleaved (W × H × 3)
+// seg_mask:     uint8 class indices, any resolution (nearest-neighbor upsampled)
+// color_lut:    float LUT, shape (num_classes, 7)
+//               Per class: [R_gain, G_gain, B_gain, R_bias, G_bias, B_bias, blend_alpha]
+//               Identity: gain=1, bias=0, alpha=1. Desaturate: gain=0.3, alpha=0.8.
+// output:       RGB interleaved (same size as input)
+int seg_color_style(Halide::Runtime::Buffer<uint8_t>& input,
+                    Halide::Runtime::Buffer<uint8_t>& seg_mask,
+                    Halide::Runtime::Buffer<float>& color_lut,
+                    Halide::Runtime::Buffer<uint8_t>& output);
+
+// Depth-map guided multi-kernel blur: continuous depth-of-field simulation.
+// Applies different disc blur radii to different depth zones based on a
+// continuous depth map. Supports up to 5 depth layers with distinct radii.
+//
+// input:         RGB interleaved (W x H x 3)
+// depth_map:     uint8 continuous depth (0-255), any resolution (bilinear-upsampled)
+// kernel_config: float buffer (num_kernels x 3): [min_depth_norm, max_depth_norm, radius]
+//                Depth values normalized to [0,1]. Kernels sorted by min_depth.
+// num_kernels:   number of active kernel entries (<= 5)
+// output:        RGB interleaved (same size as input)
+int seg_depth_blur(Halide::Runtime::Buffer<uint8_t>& input,
+                   Halide::Runtime::Buffer<uint8_t>& depth_map,
+                   Halide::Runtime::Buffer<float>& kernel_config,
+                   int num_kernels,
+                   Halide::Runtime::Buffer<uint8_t>& output);
+
 } // namespace halide_ops

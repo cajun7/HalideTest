@@ -78,6 +78,11 @@
 #include "nv21_resize_rgb_bilinear_optimized.h"
 #include "nv21_resize_rgb_area_optimized.h"
 #include "nv21_resize_rgb_bicubic_optimized.h"
+// Segmentation-guided pipelines
+#include "seg_portrait_blur.h"
+#include "seg_bg_replace.h"
+#include "seg_color_style.h"
+#include "seg_depth_blur.h"
 
 namespace halide_ops {
 
@@ -488,6 +493,40 @@ int nv21_resize_rgb_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                       int target_w, int target_h,
                                       Halide::Runtime::Buffer<uint8_t>& output) {
     return ::nv21_resize_rgb_bicubic_optimized(y_plane, uv_plane, target_w, target_h, output);
+}
+
+// ---------------------------------------------------------------------------
+// Segmentation-Guided Pipelines
+// ---------------------------------------------------------------------------
+
+int seg_portrait_blur(Halide::Runtime::Buffer<uint8_t>& input,
+                      Halide::Runtime::Buffer<uint8_t>& seg_mask,
+                      int fg_class, int blur_radius, float edge_softness,
+                      Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::seg_portrait_blur(input, seg_mask, fg_class, blur_radius, edge_softness, output);
+}
+
+int seg_bg_replace(Halide::Runtime::Buffer<uint8_t>& fg_image,
+                   Halide::Runtime::Buffer<uint8_t>& bg_image,
+                   Halide::Runtime::Buffer<uint8_t>& seg_mask,
+                   int fg_class, float edge_softness,
+                   Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::seg_bg_replace(fg_image, bg_image, seg_mask, fg_class, edge_softness, output);
+}
+
+int seg_color_style(Halide::Runtime::Buffer<uint8_t>& input,
+                    Halide::Runtime::Buffer<uint8_t>& seg_mask,
+                    Halide::Runtime::Buffer<float>& color_lut,
+                    Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::seg_color_style(input, seg_mask, color_lut, output);
+}
+
+int seg_depth_blur(Halide::Runtime::Buffer<uint8_t>& input,
+                   Halide::Runtime::Buffer<uint8_t>& depth_map,
+                   Halide::Runtime::Buffer<float>& kernel_config,
+                   int num_kernels,
+                   Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::seg_depth_blur(input, depth_map, kernel_config, num_kernels, output);
 }
 
 } // namespace halide_ops

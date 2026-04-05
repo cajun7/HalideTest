@@ -2,6 +2,7 @@
 
 #include <opencv2/core.hpp>
 #include <cstdint>
+#include <vector>
 
 // OpenCV operation wrappers for benchmark comparison.
 namespace opencv_ops {
@@ -96,5 +97,29 @@ void nv21_resize_optimized(const cv::Mat& nv21, cv::Mat& nv21_out,
 // Fused NV21->resize->RGB reference (chained steps for timing comparison)
 void nv21_resize_rgb_optimized(const cv::Mat& nv21, cv::Mat& rgb_out,
                                int target_w, int target_h, int interp);
+
+// ---------------------------------------------------------------------------
+// Segmentation-Guided Pipeline References
+// ---------------------------------------------------------------------------
+
+// Portrait blur: disc-kernel blur + alpha blend using seg mask (chained OpenCV steps)
+void seg_portrait_blur(const cv::Mat& input, const cv::Mat& seg_mask,
+                       int fg_class, int blur_radius, float edge_softness,
+                       cv::Mat& output);
+
+// Background replacement: alpha composite fg/bg using seg mask (chained OpenCV steps)
+void seg_bg_replace(const cv::Mat& fg_image, const cv::Mat& bg_image,
+                    const cv::Mat& seg_mask, int fg_class, float edge_softness,
+                    cv::Mat& output);
+
+// Selective color grading: per-class LUT transform using seg mask
+void seg_color_style(const cv::Mat& input, const cv::Mat& seg_mask,
+                     const std::vector<float>& color_lut, int num_classes,
+                     cv::Mat& output);
+
+// Depth-map guided multi-kernel blur reference (chained OpenCV steps)
+void seg_depth_blur(const cv::Mat& input, const cv::Mat& depth_map,
+                    const std::vector<float>& kernel_config, int num_kernels,
+                    cv::Mat& output);
 
 } // namespace opencv_ops

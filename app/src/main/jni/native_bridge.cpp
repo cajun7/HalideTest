@@ -1331,6 +1331,196 @@ Java_com_example_halidetest_NativeBridge_nv21ResizeRgbBicubicOptimized(
 }
 
 // -----------------------------------------------------------------------
+// Segmentation-Guided Pipelines
+// -----------------------------------------------------------------------
+
+// Helper: create a synthetic seg mask (centered rectangle as foreground)
+static void make_seg_mask_data(uint8_t* mask, int mw, int mh, int fg_class) {
+    int x0 = mw * 3 / 10, x1 = mw * 7 / 10;
+    int y0 = mh * 3 / 10, y1 = mh * 7 / 10;
+    for (int y = 0; y < mh; y++)
+        for (int x = 0; x < mw; x++)
+            mask[y * mw + x] = (x >= x0 && x < x1 && y >= y0 && y < y1)
+                                ? (uint8_t)fg_class : (uint8_t)0;
+}
+
+// Helper: create a striped seg mask (alternating classes)
+static void make_striped_mask_data(uint8_t* mask, int mw, int mh, int num_classes) {
+    int stripe_w = std::max(1, mw / num_classes);
+    for (int y = 0; y < mh; y++)
+        for (int x = 0; x < mw; x++)
+            mask[y * mw + x] = (uint8_t)std::min(x / stripe_w, num_classes - 1);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_segPortraitBlur(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap,
+    jint blurRadius, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int mw = 256, mh = 256;
+    int fg_class = 1;
+    float edge_softness = 3.0f;
+
+    // Create synthetic seg mask
+    std::vector<uint8_t> mask_data(mw * mh);
+    make_seg_mask_data(mask_data.data(), mw, mh, fg_class);
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        Halide::Runtime::Buffer<uint8_t> mbuf(mask_data.data(), mw, mh);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+
+        halide_ops::seg_portrait_blur(ibuf, mbuf, fg_class, blurRadius, edge_softness, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_rgb;
+        cv::cvtColor(in_rgba, in_rgb, cv::COLOR_RGBA2RGB);
+        cv::Mat mask_cv(mh, mw, CV_8UC1, mask_data.data());
+        cv::Mat out_rgb;
+
+        opencv_ops::seg_portrait_blur(in_rgb, mask_cv, fg_class, blurRadius,
+                                      edge_softness, out_rgb);
+
+        cv::Mat out_rgba;
+        cv::cvtColor(out_rgb, out_rgba, cv::COLOR_RGB2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_segBgReplace(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject bgBitmap,
+    jobject outputBitmap, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock bg_lock(env, bgBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !bg_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int bw = bg_lock.width(), bh = bg_lock.height();
+    int mw = 256, mh = 256;
+    int fg_class = 1;
+    float edge_softness = 3.0f;
+
+    std::vector<uint8_t> mask_data(mw * mh);
+    make_seg_mask_data(mask_data.data(), mw, mh, fg_class);
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> fg_rgb(w * h * 3), bg_rgb(bw * bh * 3), out_rgb(w * h * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, fg_rgb.data(), w, h);
+        rgba_to_rgb((uint8_t*)bg_lock.pixels, bg_rgb.data(), bw, bh);
+
+        auto fg_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(fg_rgb.data(), w, h, 3);
+        auto bg_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(bg_rgb.data(), bw, bh, 3);
+        Halide::Runtime::Buffer<uint8_t> mbuf(mask_data.data(), mw, mh);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(out_rgb.data(), w, h, 3);
+
+        halide_ops::seg_bg_replace(fg_buf, bg_buf, mbuf, fg_class, edge_softness, obuf);
+
+        rgb_to_rgba(out_rgb.data(), (uint8_t*)out_lock.pixels, w, h);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat bg_rgba = bg_lock.as_opencv_rgba();
+        cv::Mat in_rgb, bg_rgb;
+        cv::cvtColor(in_rgba, in_rgb, cv::COLOR_RGBA2RGB);
+        cv::cvtColor(bg_rgba, bg_rgb, cv::COLOR_RGBA2RGB);
+        cv::Mat mask_cv(mh, mw, CV_8UC1, mask_data.data());
+        cv::Mat out_rgb;
+
+        opencv_ops::seg_bg_replace(in_rgb, bg_rgb, mask_cv, fg_class,
+                                   edge_softness, out_rgb);
+
+        cv::Mat out_rgba;
+        cv::cvtColor(out_rgb, out_rgba, cv::COLOR_RGB2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_segColorStyle(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int mw = 256, mh = 256;
+    int num_classes = 8;
+
+    // Create striped mask
+    std::vector<uint8_t> mask_data(mw * mh);
+    make_striped_mask_data(mask_data.data(), mw, mh, num_classes);
+
+    // Create styled LUT: [R_gain, G_gain, B_gain, R_bias, G_bias, B_bias, blend_alpha] per class
+    std::vector<float> lut_data(num_classes * 7);
+    // Class 0: desaturate (darken)
+    float lut_values[] = {
+        0.3f, 0.3f, 0.3f, 0.0f, 0.0f, 0.0f, 0.8f,  // 0: background
+        1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,  // 1: person (unchanged)
+        0.8f, 0.9f, 1.2f, 0.0f, 0.0f, 20.0f, 0.9f, // 2: sky (enhance blue)
+        0.9f, 1.1f, 0.8f, 0.0f, 10.0f, 0.0f, 0.9f, // 3: vegetation (enhance green)
+        1.1f, 1.0f, 0.9f, 12.0f, 0.0f, 0.0f, 0.7f, // 4: warm
+        0.9f, 1.0f, 1.1f, 0.0f, 0.0f, 8.0f, 0.7f,  // 5: cool
+        1.0f, 1.0f, 1.0f, 15.0f, 0.0f, 10.0f, 0.7f,// 6: magenta tint
+        0.8f, 0.8f, 0.8f, 20.0f, 20.0f, 20.0f, 0.7f // 7: gray
+    };
+    std::copy(lut_values, lut_values + num_classes * 7, lut_data.begin());
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        Halide::Runtime::Buffer<uint8_t> mbuf(mask_data.data(), mw, mh);
+        Halide::Runtime::Buffer<float> lbuf(lut_data.data(), num_classes, 7);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+
+        halide_ops::seg_color_style(ibuf, mbuf, lbuf, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_rgb;
+        cv::cvtColor(in_rgba, in_rgb, cv::COLOR_RGBA2RGB);
+        cv::Mat mask_cv(mh, mw, CV_8UC1, mask_data.data());
+        cv::Mat out_rgb;
+
+        opencv_ops::seg_color_style(in_rgb, mask_cv, lut_data, num_classes, out_rgb);
+
+        cv::Mat out_rgba;
+        cv::cvtColor(out_rgb, out_rgba, cv::COLOR_RGB2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
 // Native-only benchmark (malloc, no Java Bitmap — supports 200MP+)
 // -----------------------------------------------------------------------
 // Generates test data in native heap, runs Halide/OpenCV operation, frees.
@@ -1352,6 +1542,9 @@ static void fill_test_nv21(uint8_t* nv21, int w, int h) {
     for (int i = 0; i < y_size; i++) nv21[i] = (uint8_t)(i % 256);
     for (int i = 0; i < uv_size; i++) nv21[y_size + i] = (uint8_t)(128 + (i % 64));
 }
+
+// Forward declaration (defined in segDepthBlur JNI section below)
+static void make_depth_map_data(uint8_t* data, int w, int h);
 
 JNIEXPORT jlong JNICALL
 Java_com_example_halidetest_NativeBridge_nativeBenchmark(
@@ -1662,8 +1855,186 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             }
             break;
         }
+        case 19: { // Seg Portrait Blur (r=8)
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            int mw = 256, mh = 256;
+            std::vector<uint8_t> mask_data(mw * mh);
+            int fg_class = 1;
+            make_seg_mask_data(mask_data.data(), mw, mh, fg_class);
+            int blur_radius = 8;
+            float edge_softness = 3.0f;
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                Halide::Runtime::Buffer<uint8_t> mbuf(mask_data.data(), mw, mh);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+                halide_ops::seg_portrait_blur(ibuf, mbuf, fg_class, blur_radius, edge_softness, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat mask_mat(mh, mw, CV_8UC1, mask_data.data());
+                cv::Mat out_bgr;
+                opencv_ops::seg_portrait_blur(in_bgr, mask_mat, fg_class, blur_radius, edge_softness, out_bgr);
+            }
+            break;
+        }
+        case 20: { // Seg Background Replace
+            std::vector<uint8_t> fg_rgb(w * h * 3), bg_rgb(w * h * 3), out_rgb(w * h * 3);
+            fill_test_rgb(fg_rgb.data(), w, h);
+            fill_test_rgb(bg_rgb.data(), w, h); // same size bg for simplicity
+            int mw = 256, mh = 256;
+            std::vector<uint8_t> mask_data(mw * mh);
+            int fg_class = 1;
+            make_seg_mask_data(mask_data.data(), mw, mh, fg_class);
+            float edge_softness = 3.0f;
+            if (useHalide) {
+                auto fg_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(fg_rgb.data(), w, h, 3);
+                auto bg_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(bg_rgb.data(), w, h, 3);
+                Halide::Runtime::Buffer<uint8_t> mbuf(mask_data.data(), mw, mh);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(out_rgb.data(), w, h, 3);
+                halide_ops::seg_bg_replace(fg_buf, bg_buf, mbuf, fg_class, edge_softness, obuf);
+            } else {
+                cv::Mat fg_mat(h, w, CV_8UC3, fg_rgb.data());
+                cv::Mat bg_mat(h, w, CV_8UC3, bg_rgb.data());
+                cv::Mat mask_mat(mh, mw, CV_8UC1, mask_data.data());
+                cv::Mat out_mat;
+                opencv_ops::seg_bg_replace(fg_mat, bg_mat, mask_mat, fg_class, edge_softness, out_mat);
+            }
+            break;
+        }
+        case 21: { // Seg Color Style
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            int mw = 256, mh = 256;
+            int num_classes = 8;
+            std::vector<uint8_t> mask_data(mw * mh);
+            make_striped_mask_data(mask_data.data(), mw, mh, num_classes);
+            float lut_values[] = {
+                0.3f, 0.3f, 0.3f, 0.0f, 0.0f, 0.0f, 0.8f,
+                1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                0.8f, 0.9f, 1.2f, 0.0f, 0.0f, 20.0f, 0.9f,
+                0.9f, 1.1f, 0.8f, 0.0f, 10.0f, 0.0f, 0.9f,
+                1.1f, 1.0f, 0.9f, 12.0f, 0.0f, 0.0f, 0.7f,
+                0.9f, 1.0f, 1.1f, 0.0f, 0.0f, 8.0f, 0.7f,
+                1.0f, 1.0f, 1.0f, 15.0f, 0.0f, 10.0f, 0.7f,
+                0.8f, 0.8f, 0.8f, 20.0f, 20.0f, 20.0f, 0.7f
+            };
+            std::vector<float> lut_data(lut_values, lut_values + num_classes * 7);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                Halide::Runtime::Buffer<uint8_t> mbuf(mask_data.data(), mw, mh);
+                Halide::Runtime::Buffer<float> lbuf(lut_data.data(), 7, num_classes);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+                halide_ops::seg_color_style(ibuf, mbuf, lbuf, obuf);
+            } else {
+                cv::Mat in_mat(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat mask_mat(mh, mw, CV_8UC1, mask_data.data());
+                cv::Mat out_mat;
+                opencv_ops::seg_color_style(in_mat, mask_mat, lut_data, num_classes, out_mat);
+            }
+            break;
+        }
+        case 22: { // Seg Depth Blur
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            int dw = 256, dh = 256;
+            int nk = 3;
+            std::vector<uint8_t> depth_data(dw * dh);
+            make_depth_map_data(depth_data.data(), dw, dh);
+            float config_values[] = {
+                0.0f,  0.33f, 0.0f,
+                0.33f, 0.66f, 4.0f,
+                0.66f, 1.0f,  8.0f,
+                0.0f,  0.0f,  0.0f,
+                0.0f,  0.0f,  0.0f,
+            };
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                Halide::Runtime::Buffer<uint8_t> dbuf(depth_data.data(), dw, dh);
+                Halide::Runtime::Buffer<float> cbuf(config_values, 5, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+                halide_ops::seg_depth_blur(ibuf, dbuf, cbuf, nk, obuf);
+            } else {
+                cv::Mat in_mat(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat depth_mat(dh, dw, CV_8UC1, depth_data.data());
+                std::vector<float> config_vec(config_values, config_values + nk * 3);
+                cv::Mat out_mat;
+                opencv_ops::seg_depth_blur(in_mat, depth_mat, config_vec, nk, out_mat);
+            }
+            break;
+        }
         default:
             return -1;
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// Depth-map guided multi-kernel blur
+// -----------------------------------------------------------------------
+
+// Generate a vertical gradient depth map (top=near=0, bottom=far=255)
+static void make_depth_map_data(uint8_t* data, int w, int h) {
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+            data[y * w + x] = (uint8_t)(y * 255 / std::max(h - 1, 1));
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_segDepthBlur(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap,
+    jint numKernels, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int dw = 256, dh = 256;
+
+    // Create synthetic depth map (vertical gradient)
+    std::vector<uint8_t> depth_data(dw * dh);
+    make_depth_map_data(depth_data.data(), dw, dh);
+
+    // Default 3-zone kernel config: near(sharp), mid(light blur), far(heavy blur)
+    int nk = std::min((int)numKernels, 5);
+    float config_values[] = {
+        0.0f,  0.33f, 0.0f,   // near: no blur
+        0.33f, 0.66f, 4.0f,   // mid: radius 4
+        0.66f, 1.0f,  8.0f,   // far: radius 8
+        0.0f,  0.0f,  0.0f,   // unused
+        0.0f,  0.0f,  0.0f,   // unused
+    };
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        Halide::Runtime::Buffer<uint8_t> dbuf(depth_data.data(), dw, dh);
+        Halide::Runtime::Buffer<float> cbuf(config_values, 5, 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+
+        halide_ops::seg_depth_blur(ibuf, dbuf, cbuf, nk, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_rgb;
+        cv::cvtColor(in_rgba, in_rgb, cv::COLOR_RGBA2RGB);
+        cv::Mat depth_cv(dh, dw, CV_8UC1, depth_data.data());
+
+        std::vector<float> config_vec(config_values, config_values + nk * 3);
+        cv::Mat out_rgb;
+
+        opencv_ops::seg_depth_blur(in_rgb, depth_cv, config_vec, nk, out_rgb);
+
+        cv::Mat out_rgba;
+        cv::cvtColor(out_rgb, out_rgba, cv::COLOR_RGB2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
     }
 
     auto end = Clock::now();

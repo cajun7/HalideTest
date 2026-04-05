@@ -82,9 +82,11 @@ public:
 
         Expr uv_w_half = src_w / 2;
         Expr uv_h_dim = uv_plane.dim(1).extent();
-        Expr ix0 = unsafe_promise_clamped(uv_ix, 0, uv_w_half - 1);
+        // Promise range [-1, extent] to handle floor() = -1 at boundary (upscale case).
+        // Safe because uv_clamped uses repeat_edge which handles -1 via clamping.
+        Expr ix0 = unsafe_promise_clamped(uv_ix, -1, uv_w_half - 1);
         Expr ix1 = unsafe_promise_clamped(uv_ix + 1, 0, uv_w_half);
-        Expr iy0 = unsafe_promise_clamped(uv_iy, 0, uv_h_dim - 1);
+        Expr iy0 = unsafe_promise_clamped(uv_iy, -1, uv_h_dim - 1);
         Expr iy1 = unsafe_promise_clamped(uv_iy + 1, 0, uv_h_dim);
 
         // V (even bytes) — integer bilinear

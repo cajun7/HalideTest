@@ -1,5 +1,7 @@
 #include "opencv_ops.h"
 #include <opencv2/imgproc.hpp>
+#include <algorithm>
+#include <cmath>
 
 namespace opencv_ops {
 
@@ -261,6 +263,184 @@ void nv21_resize_rgb_optimized(const cv::Mat& nv21, cv::Mat& rgb_out,
     cv::Mat rgb;
     cv::cvtColor(nv21, rgb, cv::COLOR_YUV2RGB_NV21);
     cv::resize(rgb, rgb_out, cv::Size(target_w, target_h), 0, 0, interp);
+}
+
+// ---------------------------------------------------------------------------
+// Segmentation-Guided Pipeline References
+// ---------------------------------------------------------------------------
+
+void seg_portrait_blur(const cv::Mat& input, const cv::Mat& seg_mask,
+                       int fg_class, int blur_radius, float edge_softness,
+                       cv::Mat& output) {
+    int w = input.cols;
+    int h = input.rows;
+
+    // Step 1: Build soft alpha mask (resize + feathering)
+    cv::Mat mask_binary(seg_mask.rows, seg_mask.cols, CV_32FC1);
+    for (int y = 0; y < seg_mask.rows; y++)
+        for (int x = 0; x < seg_mask.cols; x++)
+            mask_binary.at<float>(y, x) = (seg_mask.at<uint8_t>(y, x) == fg_class) ? 1.0f : 0.0f;
+
+    cv::Mat alpha_full;
+    cv::resize(mask_binary, alpha_full, cv::Size(w, h), 0, 0, cv::INTER_LINEAR);
+
+    // Sigmoid feathering
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            float v = (alpha_full.at<float>(y, x) - 0.5f) * edge_softness + 0.5f;
+            alpha_full.at<float>(y, x) = std::max(0.0f, std::min(1.0f, v));
+        }
+
+    // Step 2: Disc blur the image
+    int ksize = 2 * blur_radius + 1;
+    cv::Mat kernel = cv::Mat::zeros(ksize, ksize, CV_32F);
+    int count = 0;
+    for (int dy = -blur_radius; dy <= blur_radius; dy++)
+        for (int dx = -blur_radius; dx <= blur_radius; dx++)
+            if (dx * dx + dy * dy <= blur_radius * blur_radius) {
+                kernel.at<float>(dy + blur_radius, dx + blur_radius) = 1.0f;
+                count++;
+            }
+    if (count > 0) kernel /= (float)count;
+
+    cv::Mat blurred;
+    cv::filter2D(input, blurred, -1, kernel, cv::Point(-1, -1), 0, cv::BORDER_REPLICATE);
+
+    // Step 3: Alpha blend
+    output = cv::Mat(h, w, CV_8UC3);
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            float a = alpha_full.at<float>(y, x);
+            cv::Vec3b fg = input.at<cv::Vec3b>(y, x);
+            cv::Vec3b bg = blurred.at<cv::Vec3b>(y, x);
+            for (int c = 0; c < 3; c++)
+                output.at<cv::Vec3b>(y, x)[c] = (uint8_t)std::max(0.0f,
+                    std::min(255.0f, a * fg[c] + (1.0f - a) * bg[c] + 0.5f));
+        }
+}
+
+void seg_bg_replace(const cv::Mat& fg_image, const cv::Mat& bg_image,
+                    const cv::Mat& seg_mask, int fg_class, float edge_softness,
+                    cv::Mat& output) {
+    int w = fg_image.cols;
+    int h = fg_image.rows;
+
+    // Step 1: Build soft alpha mask
+    cv::Mat mask_binary(seg_mask.rows, seg_mask.cols, CV_32FC1);
+    for (int y = 0; y < seg_mask.rows; y++)
+        for (int x = 0; x < seg_mask.cols; x++)
+            mask_binary.at<float>(y, x) = (seg_mask.at<uint8_t>(y, x) == fg_class) ? 1.0f : 0.0f;
+
+    cv::Mat alpha_full;
+    cv::resize(mask_binary, alpha_full, cv::Size(w, h), 0, 0, cv::INTER_LINEAR);
+
+    // Sigmoid feathering
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            float v = (alpha_full.at<float>(y, x) - 0.5f) * edge_softness + 0.5f;
+            alpha_full.at<float>(y, x) = std::max(0.0f, std::min(1.0f, v));
+        }
+
+    // Step 2: Resize background to match foreground
+    cv::Mat bg_resized;
+    cv::resize(bg_image, bg_resized, cv::Size(w, h), 0, 0, cv::INTER_LINEAR);
+
+    // Step 3: Alpha composite
+    output = cv::Mat(h, w, CV_8UC3);
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            float a = alpha_full.at<float>(y, x);
+            cv::Vec3b fg = fg_image.at<cv::Vec3b>(y, x);
+            cv::Vec3b bg = bg_resized.at<cv::Vec3b>(y, x);
+            for (int c = 0; c < 3; c++)
+                output.at<cv::Vec3b>(y, x)[c] = (uint8_t)std::max(0.0f,
+                    std::min(255.0f, a * fg[c] + (1.0f - a) * bg[c] + 0.5f));
+        }
+}
+
+void seg_color_style(const cv::Mat& input, const cv::Mat& seg_mask,
+                     const std::vector<float>& color_lut, int num_classes,
+                     cv::Mat& output) {
+    int w = input.cols;
+    int h = input.rows;
+
+    // Step 1: Resize seg_mask to full resolution (nearest-neighbor)
+    cv::Mat mask_full;
+    cv::resize(seg_mask, mask_full, cv::Size(w, h), 0, 0, cv::INTER_NEAREST);
+
+    // Step 2: Apply per-class color grade + blend
+    output = cv::Mat(h, w, CV_8UC3);
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            int cls = mask_full.at<uint8_t>(y, x);
+            if (cls >= num_classes) cls = 0;
+
+            const float* lut = &color_lut[cls * 7];
+            float blend_alpha = lut[6];
+
+            cv::Vec3b px = input.at<cv::Vec3b>(y, x);
+            for (int c = 0; c < 3; c++) {
+                float orig = (float)px[c];
+                float styled = std::max(0.0f, std::min(255.0f, orig * lut[c] + lut[c + 3]));
+                float blended = blend_alpha * styled + (1.0f - blend_alpha) * orig + 0.5f;
+                output.at<cv::Vec3b>(y, x)[c] = (uint8_t)std::max(0.0f, std::min(255.0f, blended));
+            }
+        }
+}
+
+void seg_depth_blur(const cv::Mat& input, const cv::Mat& depth_map,
+                    const std::vector<float>& kernel_config, int num_kernels,
+                    cv::Mat& output) {
+    int w = input.cols;
+    int h = input.rows;
+
+    // Step 1: Bilinear upsample depth map to input resolution, normalize to [0,1]
+    cv::Mat depth_full;
+    cv::Mat depth_float;
+    depth_map.convertTo(depth_float, CV_32FC1, 1.0 / 255.0);
+    cv::resize(depth_float, depth_full, cv::Size(w, h), 0, 0, cv::INTER_LINEAR);
+
+    // Step 2: Pre-blur image at each layer's radius using disc kernel
+    std::vector<cv::Mat> blurred_layers(num_kernels);
+    for (int k = 0; k < num_kernels; k++) {
+        int radius = (int)kernel_config[k * 3 + 2];
+        if (radius <= 0) {
+            blurred_layers[k] = input.clone();
+            continue;
+        }
+        int ksize = 2 * radius + 1;
+        cv::Mat kernel = cv::Mat::zeros(ksize, ksize, CV_32F);
+        int count = 0;
+        for (int dy = -radius; dy <= radius; dy++)
+            for (int dx = -radius; dx <= radius; dx++)
+                if (dx * dx + dy * dy <= radius * radius) {
+                    kernel.at<float>(dy + radius, dx + radius) = 1.0f;
+                    count++;
+                }
+        if (count > 0) kernel /= (float)count;
+        cv::filter2D(input, blurred_layers[k], -1, kernel,
+                     cv::Point(-1, -1), 0, cv::BORDER_REPLICATE);
+    }
+
+    // Step 3: Per-pixel depth-based layer selection
+    output = input.clone();
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            float d = depth_full.at<float>(y, x);
+            // Find matching kernel (last match wins, same as Halide generator)
+            int selected = -1;
+            for (int k = 0; k < num_kernels; k++) {
+                float min_d = kernel_config[k * 3 + 0];
+                float max_d = kernel_config[k * 3 + 1];
+                if (d >= min_d && d <= max_d)
+                    selected = k;
+            }
+            if (selected >= 0) {
+                output.at<cv::Vec3b>(y, x) = blurred_layers[selected].at<cv::Vec3b>(y, x);
+            }
+            // else: keep original sharp pixel
+        }
+    }
 }
 
 } // namespace opencv_ops

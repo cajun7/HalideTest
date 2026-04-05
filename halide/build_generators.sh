@@ -132,6 +132,15 @@ MULTI_TARGET_RUNS=(
     "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_bilinear_optimized -f nv21_resize_rgb_bilinear_optimized"
     "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_area_optimized -f nv21_resize_rgb_area_optimized"
     "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_bicubic_optimized -f nv21_resize_rgb_bicubic_optimized"
+    # --- Segmentation-guided pipelines ---
+    # Portrait mode: seg-guided selective disc blur with alpha blending
+    "seg_portrait_blur_generator -g seg_portrait_blur -f seg_portrait_blur"
+    # Background replacement: seg-guided foreground/background compositing
+    "seg_bg_replace_generator -g seg_bg_replace -f seg_bg_replace"
+    # Selective color grading: per-class LUT-based color transform
+    "seg_color_style_generator -g seg_color_style -f seg_color_style num_classes=8"
+    # Depth-map guided multi-kernel blur: continuous depth-of-field simulation
+    "seg_depth_blur_generator -g seg_depth_blur -f seg_depth_blur"
 )
 
 # Generators with no arithmetic benefit (pure index/channel remapping)

@@ -257,6 +257,44 @@ public class NativeBridge {
                                                              int targetWidth, int targetHeight,
                                                              boolean useHalide);
 
+    // ---- Segmentation-guided pipelines ----
+
+    /**
+     * Portrait mode: seg-guided disc blur with feathered alpha blending.
+     * Keeps foreground sharp, blurs background with bokeh disc kernel.
+     * Uses synthetic seg_mask (centered rectangle as foreground).
+     * @param blurRadius disc blur radius in pixels
+     * @return execution time in microseconds
+     */
+    public static native long segPortraitBlur(Bitmap inputBitmap, Bitmap outputBitmap,
+                                               int blurRadius, boolean useHalide);
+
+    /**
+     * Background replacement: composites foreground onto arbitrary background.
+     * Uses synthetic seg_mask (centered rectangle as foreground).
+     * @return execution time in microseconds
+     */
+    public static native long segBgReplace(Bitmap inputBitmap, Bitmap bgBitmap,
+                                            Bitmap outputBitmap, boolean useHalide);
+
+    /**
+     * Selective color grading: per-class LUT color transform using seg mask.
+     * Uses synthetic seg_mask (striped pattern) and styled color LUT.
+     * @return execution time in microseconds
+     */
+    public static native long segColorStyle(Bitmap inputBitmap, Bitmap outputBitmap,
+                                             boolean useHalide);
+
+    /**
+     * Depth-map guided multi-kernel blur.
+     * Simulates camera depth-of-field with continuous focus falloff.
+     * Uses synthetic depth map (vertical gradient: top=near, bottom=far).
+     * @param numKernels number of blur depth zones (max 5)
+     * @return execution time in microseconds
+     */
+    public static native long segDepthBlur(Bitmap inputBitmap, Bitmap outputBitmap,
+                                            int numKernels, boolean useHalide);
+
     /**
      * Append a CSV line to a file on device storage.
      */

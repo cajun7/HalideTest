@@ -46,6 +46,10 @@ LOCAL_SRC_FILES := \
     ../test_nv21_resize_rgb_optimized.cpp \
     ../test_bench_optimized.cpp \
     ../test_selection_benchmark.cpp \
+    ../test_seg_portrait_blur.cpp \
+    ../test_seg_bg_replace.cpp \
+    ../test_seg_color_style.cpp \
+    ../test_seg_depth_blur.cpp \
     ../../main/jni/halide_ops.cpp
 
 LOCAL_C_INCLUDES += \
@@ -103,6 +107,10 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_bilinear_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_area_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/seg_portrait_blur.a \
+    $(HALIDE_GEN_DIR)/seg_bg_replace.a \
+    $(HALIDE_GEN_DIR)/seg_color_style.a \
+    $(HALIDE_GEN_DIR)/seg_depth_blur.a \
     $(HALIDE_GEN_DIR)/halide_runtime.a
 
 # GoogleTest requires RTTI

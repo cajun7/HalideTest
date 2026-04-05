@@ -84,6 +84,10 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_bilinear_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_area_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/seg_portrait_blur.a \
+    $(HALIDE_GEN_DIR)/seg_bg_replace.a \
+    $(HALIDE_GEN_DIR)/seg_color_style.a \
+    $(HALIDE_GEN_DIR)/seg_depth_blur.a \
     $(HALIDE_GEN_DIR)/halide_runtime.a
 
 include $(BUILD_SHARED_LIBRARY)
