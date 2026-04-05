@@ -1,5 +1,5 @@
 #include "test_common.h"
-#include "rgb_bgr_convert.h"
+#include "rgb_bgr_optimized.h"
 
 class RgbBgrTest : public ::testing::TestWithParam<std::pair<int, int>> {};
 
@@ -22,8 +22,8 @@ TEST_P(RgbBgrTest, RgbToBgr_MatchesOpenCV) {
     Halide::Runtime::Buffer<uint8_t> output_buf =
         Halide::Runtime::Buffer<uint8_t>::make_interleaved(width, height, 3);
 
-    int err = rgb_bgr_convert(input_buf, output_buf);
-    ASSERT_EQ(err, 0) << "Halide rgb_bgr_convert failed with error " << err;
+    int err = rgb_bgr_optimized(input_buf, output_buf);
+    ASSERT_EQ(err, 0) << "Halide rgb_bgr_optimized failed with error " << err;
 
     // Compare: Halide output is BGR (interleaved), OpenCV result is BGR
     // Both are in the same channel order now, so compare directly without channel swap
@@ -59,7 +59,7 @@ TEST_P(RgbBgrTest, BgrToRgb_MatchesOpenCV) {
     Halide::Runtime::Buffer<uint8_t> output_buf =
         Halide::Runtime::Buffer<uint8_t>::make_interleaved(width, height, 3);
 
-    int err = rgb_bgr_convert(input_buf, output_buf);
+    int err = rgb_bgr_optimized(input_buf, output_buf);
     ASSERT_EQ(err, 0);
 
     int mismatches = 0;
@@ -88,8 +88,8 @@ TEST_P(RgbBgrTest, RoundTrip_IsIdentity) {
     Halide::Runtime::Buffer<uint8_t> roundtrip =
         Halide::Runtime::Buffer<uint8_t>::make_interleaved(width, height, 3);
 
-    rgb_bgr_convert(input_buf, intermediate);
-    rgb_bgr_convert(intermediate, roundtrip);
+    rgb_bgr_optimized(input_buf, intermediate);
+    rgb_bgr_optimized(intermediate, roundtrip);
 
     // Round-trip should be pixel-perfect identity
     for (int y = 0; y < height; y++) {
@@ -112,7 +112,7 @@ TEST_P(RgbBgrTest, ChannelSwap_StructuralVerify) {
     Halide::Runtime::Buffer<uint8_t> output_buf =
         Halide::Runtime::Buffer<uint8_t>::make_interleaved(width, height, 3);
 
-    int err = rgb_bgr_convert(input_buf, output_buf);
+    int err = rgb_bgr_optimized(input_buf, output_buf);
     ASSERT_EQ(err, 0);
 
     for (int y = 0; y < height; y++) {

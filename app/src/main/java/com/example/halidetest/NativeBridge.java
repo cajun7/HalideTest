@@ -261,4 +261,19 @@ public class NativeBridge {
      * Append a CSV line to a file on device storage.
      */
     public static native void appendCsv(String filePath, String csvLine);
+
+    /**
+     * Native-only benchmark: allocates all buffers in native heap (malloc),
+     * bypassing Java Bitmap heap limits. Supports 200MP+ resolutions.
+     * @param opId operation index matching the operations string-array order
+     * @param srcWidth source image width
+     * @param srcHeight source image height
+     * @param targetWidth target output width (for resize ops)
+     * @param targetHeight target output height (for resize ops)
+     * @param useHalide true for Halide, false for OpenCV
+     * @return execution time in microseconds
+     */
+    public static native long nativeBenchmark(int opId, int srcWidth, int srcHeight,
+                                               int targetWidth, int targetHeight,
+                                               boolean useHalide);
 }

@@ -112,6 +112,46 @@
             android:text="100"
             android:paddingBottom="12dp" />
 
+        <!-- Target resize dimensions -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Target Resize (W x H):"
+            android:textSize="14sp"
+            android:paddingBottom="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingBottom="12dp">
+
+            <EditText
+                android:id="@+id/editTargetWidth"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:inputType="number"
+                android:text="1280"
+                android:hint="Width" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" x "
+                android:textSize="16sp"
+                android:gravity="center" />
+
+            <EditText
+                android:id="@+id/editTargetHeight"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:inputType="number"
+                android:text="720"
+                android:hint="Height" />
+        </LinearLayout>
+
         <!-- Run button -->
         <Button
             android:id="@+id/btnRun"
@@ -127,6 +167,24 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Run All Operations"
+            android:textAllCaps="false"
+            android:paddingBottom="12dp" />
+
+        <!-- Camera capture button -->
+        <Button
+            android:id="@+id/btnCameraCapture"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Camera Capture"
+            android:textAllCaps="false"
+            android:paddingBottom="8dp" />
+
+        <!-- Clean saved images button -->
+        <Button
+            android:id="@+id/btnCleanImages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Clean Saved Images"
             android:textAllCaps="false"
             android:paddingBottom="12dp" />
 

@@ -41,17 +41,13 @@ LOCAL_LDLIBS += -llog -lm -ljnigraphics -landroid
 # halide_runtime.a MUST come LAST: pipelines reference runtime symbols,
 # and the linker only pulls .o from archives that resolve current undefs.
 LOCAL_LDFLAGS += \
-    $(HALIDE_GEN_DIR)/rgb_bgr_convert.a \
     $(HALIDE_GEN_DIR)/nv21_to_rgb.a \
     $(HALIDE_GEN_DIR)/gaussian_blur_y.a \
     $(HALIDE_GEN_DIR)/gaussian_blur_rgb.a \
     $(HALIDE_GEN_DIR)/lens_blur.a \
     $(HALIDE_GEN_DIR)/resize_bilinear.a \
     $(HALIDE_GEN_DIR)/resize_bicubic.a \
-    $(HALIDE_GEN_DIR)/resize_bilinear_target.a \
-    $(HALIDE_GEN_DIR)/resize_bicubic_target.a \
     $(HALIDE_GEN_DIR)/resize_area.a \
-    $(HALIDE_GEN_DIR)/resize_area_target.a \
     $(HALIDE_GEN_DIR)/resize_letterbox.a \
     $(HALIDE_GEN_DIR)/rotate_fixed_90cw.a \
     $(HALIDE_GEN_DIR)/rotate_fixed_180.a \
@@ -75,8 +71,6 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_180.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_270cw.a \
     $(HALIDE_GEN_DIR)/seg_argmax.a \
-    $(HALIDE_GEN_DIR)/nv21_to_rgb_optimized.a \
-    $(HALIDE_GEN_DIR)/rgb_to_nv21_optimized.a \
     $(HALIDE_GEN_DIR)/rgb_bgr_optimized.a \
     $(HALIDE_GEN_DIR)/resize_bilinear_optimized.a \
     $(HALIDE_GEN_DIR)/resize_area_optimized.a \

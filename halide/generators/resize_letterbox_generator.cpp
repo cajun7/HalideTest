@@ -88,16 +88,17 @@ public:
         Expr fx = src_x - cast<float>(ix);
         Expr fy = src_y - cast<float>(iy);
 
-        // unsafe_promise_clamped: safe because repeat_edge already clamps,
-        // and we only evaluate this for pixels inside in_region.
-        Expr ix_s = unsafe_promise_clamped(ix, -1, input.dim(0).extent());
-        Expr iy_s = unsafe_promise_clamped(iy, -1, input.dim(1).extent());
+        // No unsafe_promise_clamped here: padding pixels (outside in_region)
+        // are speculatively evaluated by SIMD vectorization, producing source
+        // coordinates far outside [-1, extent). The repeat_edge boundary
+        // condition on `clamped` safely handles all out-of-range coordinates
+        // via branchless min/max clamping.
 
         // Bilinear interpolation (same as resize_bilinear)
-        Expr val = as_float(ix_s, iy_s, c) * (1.0f - fx) * (1.0f - fy) +
-                   as_float(ix_s + 1, iy_s, c) * fx * (1.0f - fy) +
-                   as_float(ix_s, iy_s + 1, c) * (1.0f - fx) * fy +
-                   as_float(ix_s + 1, iy_s + 1, c) * fx * fy;
+        Expr val = as_float(ix, iy, c) * (1.0f - fx) * (1.0f - fy) +
+                   as_float(ix + 1, iy, c) * fx * (1.0f - fy) +
+                   as_float(ix, iy + 1, c) * (1.0f - fx) * fy +
+                   as_float(ix + 1, iy + 1, c) * fx * fy;
 
         // select: image pixel if inside region, black (0) if in padding.
         // Note: Halide may still evaluate the bilinear expression for padding

@@ -1331,6 +1331,578 @@ Java_com_example_halidetest_NativeBridge_nv21ResizeRgbBicubicOptimized(
 }
 
 // -----------------------------------------------------------------------
+// Native-only benchmark (malloc, no Java Bitmap — supports 200MP+)
+// -----------------------------------------------------------------------
+// Generates test data in native heap, runs Halide/OpenCV operation, frees.
+// opId mapping matches the Java-side string array order.
+static void fill_test_rgb(uint8_t* rgb, int w, int h) {
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            int i = (y * w + x) * 3;
+            rgb[i + 0] = (uint8_t)((x * 255) / (w > 1 ? w - 1 : 1));
+            rgb[i + 1] = (uint8_t)((y * 255) / (h > 1 ? h - 1 : 1));
+            rgb[i + 2] = (uint8_t)(((x + y) * 255) / (w + h > 2 ? w + h - 2 : 1));
+        }
+    }
+}
+
+static void fill_test_nv21(uint8_t* nv21, int w, int h) {
+    int y_size = w * h;
+    int uv_size = w * (h / 2);
+    for (int i = 0; i < y_size; i++) nv21[i] = (uint8_t)(i % 256);
+    for (int i = 0; i < uv_size; i++) nv21[y_size + i] = (uint8_t)(128 + (i % 64));
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nativeBenchmark(
+    JNIEnv* env, jclass, jint opId, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    int w = srcWidth, h = srcHeight;
+    int tw = targetWidth, th = targetHeight;
+    float sx = (float)tw / w, sy = (float)th / h;
+
+    auto start = Clock::now();
+
+    switch (opId) {
+        case 0: { // RGB to BGR
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+                halide_ops::rgb_bgr(ibuf, obuf);
+            } else {
+                cv::Mat in_rgb(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::rgb_bgr(in_rgb, out_bgr);
+            }
+            break;
+        }
+        case 1: { // NV21 to RGB
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+                halide_ops::nv21_to_rgb(y_buf, uv_buf, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_to_rgb(nv21_mat, rgb_out);
+            }
+            break;
+        }
+        case 2: { // Gaussian Blur (5x5)
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+                halide_ops::gaussian_blur_rgb(ibuf, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::gaussian_blur_rgb(in_bgr, out_bgr, 5);
+            }
+            break;
+        }
+        case 3: { // Lens Blur (r=4)
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+                halide_ops::lens_blur(ibuf, 4, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::lens_blur(in_bgr, out_bgr, 4);
+            }
+            break;
+        }
+        case 4: { // Resize Bilinear
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_bilinear(ibuf, sx, sy, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_bilinear(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 5: { // Resize Bicubic
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_bicubic(ibuf, sx, sy, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_bicubic(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 6: { // Rotate 90
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(h * w * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), h, w, 3);
+                halide_ops::rotate_90cw(ibuf, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::rotate_90(in_bgr, out_bgr);
+            }
+            break;
+        }
+        case 7: { // Rotate Arbitrary (45)
+            std::vector<uint8_t> rgb_in(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                float angle_rad = 45.0f * 3.14159265358979f / 180.0f;
+                Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
+                Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+                for (int py = 0; py < h; py++)
+                    for (int px = 0; px < w; px++)
+                        for (int pc = 0; pc < 3; pc++)
+                            ibuf(px, py, pc) = rgb_in[(py * w + px) * 3 + pc];
+                halide_ops::rotate_angle(ibuf, angle_rad, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::rotate_angle(in_bgr, out_bgr, 45.0f);
+            }
+            break;
+        }
+        case 8: { // RGB to NV21
+            std::vector<uint8_t> rgb_in(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
+                for (int py = 0; py < h; py++)
+                    for (int px = 0; px < w; px++)
+                        for (int pc = 0; pc < 3; pc++)
+                            ibuf(px, py, pc) = rgb_in[(py * w + px) * 3 + pc];
+                Halide::Runtime::Buffer<uint8_t> y_buf(w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(w, h / 2);
+                halide_ops::rgb_to_nv21(ibuf, y_buf, uv_buf);
+            } else {
+                cv::Mat in_rgb(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat nv21_out;
+                opencv_ops::rgb_to_nv21(in_rgb, nv21_out);
+            }
+            break;
+        }
+        case 9: { // Resize Area
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_area(ibuf, sx, sy, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_area(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 10: { // Resize Letterbox
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_letterbox(ibuf, tw, th, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_letterbox(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 11: { // Flip Horizontal
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+                halide_ops::flip_horizontal(ibuf, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::flip_horizontal(in_bgr, out_bgr);
+            }
+            break;
+        }
+        case 12: { // Flip Vertical
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+                halide_ops::flip_vertical(ibuf, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::flip_vertical(in_bgr, out_bgr);
+            }
+            break;
+        }
+        case 13: { // Resize Bilinear Target
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_bilinear_target(ibuf, tw, th, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_bilinear(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 14: { // Resize Bicubic Target
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_bicubic_target(ibuf, tw, th, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_bicubic(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 15: { // Resize Area Target
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_area_target(ibuf, tw, th, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_area(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 16: { // NV21 Pipeline Bilinear (rotate+resize)
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                std::vector<uint8_t> rgb_out(tw * th * 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::nv21_rotate_flip_resize_rgb(y_buf, uv_buf, 90, 0, tw, th, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_rotate_flip_resize_rgb(nv21_mat, rgb_out, 90, 0, tw, th, cv::INTER_LINEAR);
+            }
+            break;
+        }
+        case 17: { // NV21 Pipeline Area (rotate+resize)
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                std::vector<uint8_t> rgb_out(tw * th * 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::nv21_rotate_flip_resize_area_rgb(y_buf, uv_buf, 90, 0, tw, th, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_rotate_flip_resize_rgb(nv21_mat, rgb_out, 90, 0, tw, th, cv::INTER_AREA);
+            }
+            break;
+        }
+        case 18: { // NV21 YUV444 RGB
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+                halide_ops::nv21_yuv444_rgb(y_buf, uv_buf, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_yuv444_rgb(nv21_mat, rgb_out);
+            }
+            break;
+        }
+        case 19: { // NV21 to RGB Full-Range
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+                halide_ops::nv21_to_rgb_full_range(y_buf, uv_buf, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_to_rgb_full_range(nv21_mat, rgb_out);
+            }
+            break;
+        }
+        case 20: { // NV21 Resize+Pad+Rotate (384)
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            int ts = 384;
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                std::vector<uint8_t> rgb_out(ts * ts * 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), ts, ts, 3);
+                halide_ops::nv21_resize_pad_rotate(y_buf, uv_buf, 90, ts, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_resize_pad_rotate(nv21_mat, rgb_out, 90, ts);
+            }
+            break;
+        }
+        case 21: { // Seg Argmax (8 classes)
+            int nc = 8;
+            int total = w * h * nc;
+            std::vector<float> input_data(total);
+            for (int i = 0; i < total; i++) input_data[i] = (float)(i % 256) / 255.0f;
+            if (useHalide) {
+                Halide::Runtime::Buffer<float> ibuf(input_data.data(), w, h, nc);
+                Halide::Runtime::Buffer<uint8_t> obuf(w, h);
+                halide_ops::seg_argmax(ibuf, obuf);
+            } else {
+                cv::Mat input_mat(h, w, CV_32FC(nc), input_data.data());
+                cv::Mat output_mat;
+                opencv_ops::seg_argmax(input_mat, output_mat, nc);
+            }
+            break;
+        }
+        case 22: { // RGB BGR Optimized
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+                halide_ops::rgb_bgr_optimized(ibuf, obuf);
+            } else {
+                cv::Mat in_rgb(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::rgb_bgr_optimized(in_rgb, out_bgr);
+            }
+            break;
+        }
+        case 23: { // NV21 to RGB Optimized
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+                halide_ops::nv21_to_rgb_optimized(y_buf, uv_buf, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_to_rgb_optimized(nv21_mat, rgb_out);
+            }
+            break;
+        }
+        case 24: { // RGB to NV21 Optimized
+            std::vector<uint8_t> rgb_in(w * h * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
+                for (int py = 0; py < h; py++)
+                    for (int px = 0; px < w; px++)
+                        for (int pc = 0; pc < 3; pc++)
+                            ibuf(px, py, pc) = rgb_in[(py * w + px) * 3 + pc];
+                Halide::Runtime::Buffer<uint8_t> y_buf(w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(w, h / 2);
+                halide_ops::rgb_to_nv21_optimized(ibuf, y_buf, uv_buf);
+            } else {
+                cv::Mat in_rgb(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat nv21_out;
+                opencv_ops::rgb_to_nv21_optimized(in_rgb, nv21_out);
+            }
+            break;
+        }
+        case 25: { // Resize Bilinear Optimized
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_bilinear_optimized(ibuf, tw, th, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_bilinear_optimized(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 26: { // Resize Area Optimized
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_area_optimized(ibuf, tw, th, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_area_optimized(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 27: { // Resize Bicubic Optimized
+            std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+            fill_test_rgb(rgb_in.data(), w, h);
+            if (useHalide) {
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::resize_bicubic_optimized(ibuf, tw, th, obuf);
+            } else {
+                cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
+                cv::Mat out_bgr;
+                opencv_ops::resize_bicubic_optimized(in_bgr, out_bgr, tw, th);
+            }
+            break;
+        }
+        case 28: { // NV21 Resize Bilinear Optimized
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                Halide::Runtime::Buffer<uint8_t> y_out(tw, th);
+                Halide::Runtime::Buffer<uint8_t> uv_out(tw, th / 2);
+                halide_ops::nv21_resize_bilinear_optimized(y_buf, uv_buf, tw, th, y_out, uv_out);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat nv21_out;
+                opencv_ops::nv21_resize_optimized(nv21_mat, nv21_out, tw, th, cv::INTER_LINEAR);
+            }
+            break;
+        }
+        case 29: { // NV21 Resize Area Optimized
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                Halide::Runtime::Buffer<uint8_t> y_out(tw, th);
+                Halide::Runtime::Buffer<uint8_t> uv_out(tw, th / 2);
+                halide_ops::nv21_resize_area_optimized(y_buf, uv_buf, tw, th, y_out, uv_out);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat nv21_out;
+                opencv_ops::nv21_resize_optimized(nv21_mat, nv21_out, tw, th, cv::INTER_AREA);
+            }
+            break;
+        }
+        case 30: { // NV21 Resize Bicubic Optimized
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                Halide::Runtime::Buffer<uint8_t> y_out(tw, th);
+                Halide::Runtime::Buffer<uint8_t> uv_out(tw, th / 2);
+                halide_ops::nv21_resize_bicubic_optimized(y_buf, uv_buf, tw, th, y_out, uv_out);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat nv21_out;
+                opencv_ops::nv21_resize_optimized(nv21_mat, nv21_out, tw, th, cv::INTER_CUBIC);
+            }
+            break;
+        }
+        case 31: { // NV21 Resize RGB Bilinear Optimized
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                std::vector<uint8_t> rgb_out(tw * th * 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::nv21_resize_rgb_bilinear_optimized(y_buf, uv_buf, tw, th, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_resize_rgb_optimized(nv21_mat, rgb_out, tw, th, cv::INTER_LINEAR);
+            }
+            break;
+        }
+        case 32: { // NV21 Resize RGB Area Optimized
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                std::vector<uint8_t> rgb_out(tw * th * 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::nv21_resize_rgb_area_optimized(y_buf, uv_buf, tw, th, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_resize_rgb_optimized(nv21_mat, rgb_out, tw, th, cv::INTER_AREA);
+            }
+            break;
+        }
+        case 33: { // NV21 Resize RGB Bicubic Optimized
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            if (useHalide) {
+                Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+                std::vector<uint8_t> rgb_out(tw * th * 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+                halide_ops::nv21_resize_rgb_bicubic_optimized(y_buf, uv_buf, tw, th, obuf);
+            } else {
+                cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
+                cv::Mat rgb_out;
+                opencv_ops::nv21_resize_rgb_optimized(nv21_mat, rgb_out, tw, th, cv::INTER_CUBIC);
+            }
+            break;
+        }
+        default:
+            return -1;
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
 // Utility: Append benchmark result to CSV file on device
 // -----------------------------------------------------------------------
 JNIEXPORT void JNICALL

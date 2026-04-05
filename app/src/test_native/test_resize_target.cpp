@@ -1,7 +1,7 @@
 #include "test_common.h"
-#include "resize_bilinear_target.h"
-#include "resize_bicubic_target.h"
-#include "resize_area_target.h"
+#include "resize_bilinear_optimized.h"
+#include "resize_bicubic_optimized.h"
+#include "resize_area_optimized.h"
 
 class ResizeTargetTest : public ::testing::TestWithParam<std::pair<int, int>> {};
 
@@ -23,8 +23,8 @@ TEST_P(ResizeTargetTest, Bilinear_HalfSize_MatchesOpenCV) {
     auto input_buf = mat_to_halide_interleaved(rgb);
     auto output_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
 
-    int err = resize_bilinear_target(input_buf, tw, th, output_buf);
-    ASSERT_EQ(err, 0) << "Halide resize_bilinear_target failed";
+    int err = resize_bilinear_optimized(input_buf, tw, th, output_buf);
+    ASSERT_EQ(err, 0) << "Halide resize_bilinear_optimized failed";
 
     compare_buffers_rgb(output_buf, opencv_result, /*tolerance=*/3, /*opencv_is_bgr=*/true);
 }
@@ -44,7 +44,7 @@ TEST_P(ResizeTargetTest, Bilinear_DoubleSize_MatchesOpenCV) {
     auto input_buf = mat_to_halide_interleaved(rgb);
     auto output_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
 
-    int err = resize_bilinear_target(input_buf, tw, th, output_buf);
+    int err = resize_bilinear_optimized(input_buf, tw, th, output_buf);
     ASSERT_EQ(err, 0);
 
     compare_buffers_rgb(output_buf, opencv_result, /*tolerance=*/3, /*opencv_is_bgr=*/true);
@@ -64,7 +64,7 @@ TEST_P(ResizeTargetTest, Bilinear_OddTarget_MatchesOpenCV) {
     auto input_buf = mat_to_halide_interleaved(rgb);
     auto output_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
 
-    int err = resize_bilinear_target(input_buf, tw, th, output_buf);
+    int err = resize_bilinear_optimized(input_buf, tw, th, output_buf);
     ASSERT_EQ(err, 0);
 
     compare_buffers_rgb(output_buf, opencv_result, /*tolerance=*/3, /*opencv_is_bgr=*/true);
@@ -79,7 +79,7 @@ TEST_P(ResizeTargetTest, Bilinear_ExactOutputDimensions) {
     auto input_buf = mat_to_halide_interleaved(rgb);
     auto output_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
 
-    int err = resize_bilinear_target(input_buf, tw, th, output_buf);
+    int err = resize_bilinear_optimized(input_buf, tw, th, output_buf);
     ASSERT_EQ(err, 0);
 
     ASSERT_EQ(output_buf.width(), tw);
@@ -104,8 +104,8 @@ TEST_P(ResizeTargetTest, Bicubic_HalfSize_MatchesOpenCV) {
     auto input_buf = mat_to_halide_interleaved(rgb);
     auto output_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
 
-    int err = resize_bicubic_target(input_buf, tw, th, output_buf);
-    ASSERT_EQ(err, 0) << "Halide resize_bicubic_target failed";
+    int err = resize_bicubic_optimized(input_buf, tw, th, output_buf);
+    ASSERT_EQ(err, 0) << "Halide resize_bicubic_optimized failed";
 
     // Higher tolerance for bicubic due to different kernel (Catmull-Rom vs OpenCV)
     compare_buffers_rgb(output_buf, opencv_result, /*tolerance=*/5, /*opencv_is_bgr=*/true);
@@ -125,7 +125,7 @@ TEST_P(ResizeTargetTest, Bicubic_OddTarget_MatchesOpenCV) {
     auto input_buf = mat_to_halide_interleaved(rgb);
     auto output_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
 
-    int err = resize_bicubic_target(input_buf, tw, th, output_buf);
+    int err = resize_bicubic_optimized(input_buf, tw, th, output_buf);
     ASSERT_EQ(err, 0);
 
     compare_buffers_rgb(output_buf, opencv_result, /*tolerance=*/5, /*opencv_is_bgr=*/true);
@@ -149,8 +149,8 @@ TEST_P(ResizeTargetTest, Area_HalfSize_MatchesOpenCV) {
     auto input_buf = mat_to_halide_interleaved(rgb);
     auto output_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
 
-    int err = resize_area_target(input_buf, tw, th, output_buf);
-    ASSERT_EQ(err, 0) << "Halide resize_area_target failed";
+    int err = resize_area_optimized(input_buf, tw, th, output_buf);
+    ASSERT_EQ(err, 0) << "Halide resize_area_optimized failed";
 
     compare_buffers_rgb(output_buf, opencv_result, /*tolerance=*/3, /*opencv_is_bgr=*/true);
 }
@@ -170,7 +170,7 @@ TEST_P(ResizeTargetTest, Area_QuarterSize_MatchesOpenCV) {
     auto input_buf = mat_to_halide_interleaved(rgb);
     auto output_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
 
-    int err = resize_area_target(input_buf, tw, th, output_buf);
+    int err = resize_area_optimized(input_buf, tw, th, output_buf);
     ASSERT_EQ(err, 0);
 
     compare_buffers_rgb(output_buf, opencv_result, /*tolerance=*/4, /*opencv_is_bgr=*/true);
@@ -185,8 +185,8 @@ TEST_P(ResizeTargetTest, Area_AsymmetricTarget_NoCrash) {
     auto input_buf = mat_to_halide_interleaved(rgb);
     auto output_buf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
 
-    int err = resize_area_target(input_buf, tw, th, output_buf);
-    ASSERT_EQ(err, 0) << "Halide resize_area_target crashed on asymmetric target "
+    int err = resize_area_optimized(input_buf, tw, th, output_buf);
+    ASSERT_EQ(err, 0) << "Halide resize_area_optimized crashed on asymmetric target "
                        << tw << "x" << th;
 }
 

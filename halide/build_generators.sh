@@ -85,12 +85,12 @@ MULTI_TARGET_RUNS=(
     "lens_blur_generator -g lens_blur -f lens_blur"
     "resize_generator -g resize_bilinear -f resize_bilinear"
     "resize_generator -g resize_bicubic -f resize_bicubic"
-    "resize_generator -g resize_bilinear_target -f resize_bilinear_target"
-    "resize_generator -g resize_bicubic_target -f resize_bicubic_target"
+    # resize_bilinear_target and resize_bicubic_target removed:
+    # replaced by resize_bilinear_optimized and resize_bicubic_optimized (faster, OpenCV-matching)
     "rotate_generator -g rotate_arbitrary -f rotate_arbitrary"
     "rgb_to_nv21_generator -g rgb_to_nv21 -f rgb_to_nv21"
     "resize_area_generator -g resize_area -f resize_area"
-    "resize_area_generator -g resize_area_target -f resize_area_target"
+    # resize_area_target removed: replaced by resize_area_optimized
     "resize_letterbox_generator -g resize_letterbox -f resize_letterbox"
     # Fused NV21 pipeline — bilinear resize (4 rotation variants)
     "nv21_pipeline_generator -g nv21_pipeline_bilinear -f nv21_pipeline_bilinear_none rotation_code=0"
@@ -122,9 +122,8 @@ MULTI_TARGET_RUNS=(
     "nv21_resize_optimized_generator -g nv21_resize_bilinear_optimized -f nv21_resize_bilinear_optimized"
     "nv21_resize_optimized_generator -g nv21_resize_area_optimized -f nv21_resize_area_optimized"
     "nv21_resize_optimized_generator -g nv21_resize_bicubic_optimized -f nv21_resize_bicubic_optimized"
-    # NV21 <-> RGB optimized
-    "nv21_to_rgb_optimized_generator -g nv21_to_rgb_optimized -f nv21_to_rgb_optimized"
-    "rgb_to_nv21_optimized_generator -g rgb_to_nv21_optimized -f rgb_to_nv21_optimized"
+    # nv21_to_rgb_optimized and rgb_to_nv21_optimized removed:
+    # baseline versions are faster on device (benchmark data: 624 vs 697 us, 1998 vs 2107 us)
     # Fused NV21 resize -> RGB optimized
     "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_bilinear_optimized -f nv21_resize_rgb_bilinear_optimized"
     "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_area_optimized -f nv21_resize_rgb_area_optimized"
@@ -133,7 +132,7 @@ MULTI_TARGET_RUNS=(
 
 # Generators with no arithmetic benefit (pure index/channel remapping)
 SINGLE_TARGET_RUNS=(
-    "rgb_bgr_generator -g rgb_bgr_convert -f rgb_bgr_convert"
+    # rgb_bgr_convert removed: replaced by rgb_bgr_optimized (1.05x faster, identical output)
     # Fixed rotations — all 3 variants (90CW, 180, 270CW)
     "rotate_generator -g rotate_fixed -f rotate_fixed_90cw rotation_code=1"
     "rotate_generator -g rotate_fixed -f rotate_fixed_180 rotation_code=2"

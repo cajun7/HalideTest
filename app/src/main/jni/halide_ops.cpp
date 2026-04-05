@@ -24,22 +24,22 @@
 // Each header declares one C function with halide_buffer_t* parameters.
 // The function name matches the `-f` flag used during AOT compilation:
 //   ./bin/generator -g <generator_name> -f <function_name> target=arm-64-android ...
-#include "rgb_bgr_convert.h"
+// rgb_bgr_convert.h removed — rgb_bgr() now delegates to rgb_bgr_optimized
 #include "nv21_to_rgb.h"
 #include "gaussian_blur_y.h"
 #include "gaussian_blur_rgb.h"
 #include "lens_blur.h"
 #include "resize_bilinear.h"
 #include "resize_bicubic.h"
-#include "resize_bilinear_target.h"
-#include "resize_bicubic_target.h"
+// resize_bilinear_target.h removed — delegates to resize_bilinear_optimized
+// resize_bicubic_target.h removed — delegates to resize_bicubic_optimized
 #include "rotate_fixed_90cw.h"
 #include "rotate_fixed_180.h"
 #include "rotate_fixed_270cw.h"
 #include "rotate_arbitrary.h"
 #include "rgb_to_nv21.h"
 #include "resize_area.h"
-#include "resize_area_target.h"
+// resize_area_target.h removed — delegates to resize_area_optimized
 #include "resize_letterbox.h"
 #include "flip_horizontal.h"
 #include "flip_vertical.h"
@@ -63,8 +63,8 @@
 #include "nv21_resize_pad_rotate_180.h"
 #include "nv21_resize_pad_rotate_270cw.h"
 // Optimized generators
-#include "nv21_to_rgb_optimized.h"
-#include "rgb_to_nv21_optimized.h"
+// nv21_to_rgb_optimized.h removed — baseline is faster on device
+// rgb_to_nv21_optimized.h removed — baseline is faster on device
 #include "rgb_bgr_optimized.h"
 #include "resize_bilinear_optimized.h"
 #include "resize_area_optimized.h"
@@ -84,9 +84,8 @@ namespace halide_ops {
 
 int rgb_bgr(Halide::Runtime::Buffer<uint8_t>& input,
             Halide::Runtime::Buffer<uint8_t>& output) {
-    // The generated function is named "rgb_bgr_convert" (not "rgb_bgr")
-    // to avoid collision with this wrapper function name.
-    return rgb_bgr_convert(input, output);
+    // Redirected to optimized version (1.05x faster, pixel-identical output).
+    return ::rgb_bgr_optimized(input, output);
 }
 
 int nv21_to_rgb(Halide::Runtime::Buffer<uint8_t>& y_plane,
@@ -230,19 +229,22 @@ int resize_letterbox(Halide::Runtime::Buffer<uint8_t>& input,
 int resize_bilinear_target(Halide::Runtime::Buffer<uint8_t>& input,
                            int target_w, int target_h,
                            Halide::Runtime::Buffer<uint8_t>& output) {
-    return ::resize_bilinear_target(input, target_w, target_h, output);
+    // Redirected to Q11 fixed-point optimized (1.24x faster, pixel-identical to OpenCV).
+    return ::resize_bilinear_optimized(input, target_w, target_h, output);
 }
 
 int resize_bicubic_target(Halide::Runtime::Buffer<uint8_t>& input,
                           int target_w, int target_h,
                           Halide::Runtime::Buffer<uint8_t>& output) {
-    return ::resize_bicubic_target(input, target_w, target_h, output);
+    // Redirected to optimized a=-0.75 kernel (1.49x faster, matches OpenCV INTER_CUBIC).
+    return ::resize_bicubic_optimized(input, target_w, target_h, output);
 }
 
 int resize_area_target(Halide::Runtime::Buffer<uint8_t>& input,
                        int target_w, int target_h,
                        Halide::Runtime::Buffer<uint8_t>& output) {
-    return ::resize_area_target(input, target_w, target_h, output);
+    // Redirected to optimized (wider vectors, larger tiles).
+    return ::resize_area_optimized(input, target_w, target_h, output);
 }
 
 // ---------------------------------------------------------------------------
@@ -396,13 +398,15 @@ int seg_argmax(Halide::Runtime::Buffer<float>& input,
 int nv21_to_rgb_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
                           Halide::Runtime::Buffer<uint8_t>& uv_plane,
                           Halide::Runtime::Buffer<uint8_t>& output) {
-    return ::nv21_to_rgb_optimized(y_plane, uv_plane, output);
+    // Redirected to baseline (faster on device: 624 vs 697 us, identical output).
+    return ::nv21_to_rgb(y_plane, uv_plane, output);
 }
 
 int rgb_to_nv21_optimized(Halide::Runtime::Buffer<uint8_t>& input,
                           Halide::Runtime::Buffer<uint8_t>& y_output,
                           Halide::Runtime::Buffer<uint8_t>& uv_output) {
-    return ::rgb_to_nv21_optimized(input, y_output, uv_output);
+    // Redirected to baseline (faster on device: 1998 vs 2107 us, identical output).
+    return ::rgb_to_nv21(input, y_output, uv_output);
 }
 
 int rgb_bgr_optimized(Halide::Runtime::Buffer<uint8_t>& input,
