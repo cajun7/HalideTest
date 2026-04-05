@@ -1922,7 +1922,7 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             if (useHalide) {
                 auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
                 Halide::Runtime::Buffer<uint8_t> mbuf(mask_data.data(), mw, mh);
-                Halide::Runtime::Buffer<float> lbuf(lut_data.data(), 7, num_classes);
+                Halide::Runtime::Buffer<float> lbuf(lut_data.data(), num_classes, 7);
                 auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
                 halide_ops::seg_color_style(ibuf, mbuf, lbuf, obuf);
             } else {

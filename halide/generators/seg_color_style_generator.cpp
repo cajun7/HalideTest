@@ -91,7 +91,7 @@ public:
         Func clamped = repeat_edge(input);
 
         // LUT access: gains (indices 0-2), biases (indices 3-5), blend_alpha (index 6)
-        Expr cls = class_id(x, y);
+        Expr cls = clamp(class_id(x, y), 0, num_classes - 1);
         Expr gain = color_lut(cls, c);          // R/G/B gain at param index c (0,1,2)
         Expr bias = color_lut(cls, c + 3);      // R/G/B bias at param index c+3 (3,4,5)
         Expr blend_alpha = color_lut(cls, 6);   // blend strength
