@@ -72,4 +72,29 @@ void nv21_resize_pad_rotate(const cv::Mat& nv21, cv::Mat& output,
 // Segmentation argmax across channels (per-pixel class selection)
 void seg_argmax(const cv::Mat& input, cv::Mat& output, int num_classes);
 
+// ---------------------------------------------------------------------------
+// Optimized Operation References
+// ---------------------------------------------------------------------------
+
+// Optimized RGB <-> BGR (same as rgb_bgr, for benchmark comparison)
+void rgb_bgr_optimized(const cv::Mat& input, cv::Mat& output);
+
+// Optimized NV21 <-> RGB (same underlying OpenCV calls)
+void nv21_to_rgb_optimized(const cv::Mat& nv21, cv::Mat& output);
+void rgb_to_nv21_optimized(const cv::Mat& rgb, cv::Mat& nv21_output);
+
+// Optimized RGB resize (target-size)
+void resize_bilinear_optimized(const cv::Mat& input, cv::Mat& output, int out_w, int out_h);
+void resize_area_optimized(const cv::Mat& input, cv::Mat& output, int out_w, int out_h);
+void resize_bicubic_optimized(const cv::Mat& input, cv::Mat& output, int out_w, int out_h);
+
+// NV21-domain resize reference (NV21->RGB->resize->RGB->NV21 roundtrip)
+// interp: cv::INTER_LINEAR, cv::INTER_AREA, or cv::INTER_CUBIC
+void nv21_resize_optimized(const cv::Mat& nv21, cv::Mat& nv21_out,
+                           int target_w, int target_h, int interp);
+
+// Fused NV21->resize->RGB reference (chained steps for timing comparison)
+void nv21_resize_rgb_optimized(const cv::Mat& nv21, cv::Mat& rgb_out,
+                               int target_w, int target_h, int interp);
+
 } // namespace opencv_ops

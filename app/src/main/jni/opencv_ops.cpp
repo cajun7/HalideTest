@@ -217,4 +217,50 @@ void seg_argmax(const cv::Mat& input, cv::Mat& output, int num_classes) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Optimized Operation References
+// ---------------------------------------------------------------------------
+
+void rgb_bgr_optimized(const cv::Mat& input, cv::Mat& output) {
+    cv::cvtColor(input, output, cv::COLOR_RGB2BGR);
+}
+
+void nv21_to_rgb_optimized(const cv::Mat& nv21, cv::Mat& output) {
+    cv::cvtColor(nv21, output, cv::COLOR_YUV2RGB_NV21);
+}
+
+void rgb_to_nv21_optimized(const cv::Mat& rgb, cv::Mat& nv21_output) {
+    rgb_to_nv21(rgb, nv21_output);
+}
+
+void resize_bilinear_optimized(const cv::Mat& input, cv::Mat& output, int out_w, int out_h) {
+    cv::resize(input, output, cv::Size(out_w, out_h), 0, 0, cv::INTER_LINEAR);
+}
+
+void resize_area_optimized(const cv::Mat& input, cv::Mat& output, int out_w, int out_h) {
+    cv::resize(input, output, cv::Size(out_w, out_h), 0, 0, cv::INTER_AREA);
+}
+
+void resize_bicubic_optimized(const cv::Mat& input, cv::Mat& output, int out_w, int out_h) {
+    cv::resize(input, output, cv::Size(out_w, out_h), 0, 0, cv::INTER_CUBIC);
+}
+
+void nv21_resize_optimized(const cv::Mat& nv21, cv::Mat& nv21_out,
+                           int target_w, int target_h, int interp) {
+    // Reference: NV21 -> RGB -> resize -> RGB -> NV21
+    cv::Mat rgb;
+    cv::cvtColor(nv21, rgb, cv::COLOR_YUV2RGB_NV21);
+    cv::Mat resized;
+    cv::resize(rgb, resized, cv::Size(target_w, target_h), 0, 0, interp);
+    rgb_to_nv21(resized, nv21_out);
+}
+
+void nv21_resize_rgb_optimized(const cv::Mat& nv21, cv::Mat& rgb_out,
+                               int target_w, int target_h, int interp) {
+    // Reference: NV21 -> RGB -> resize
+    cv::Mat rgb;
+    cv::cvtColor(nv21, rgb, cv::COLOR_YUV2RGB_NV21);
+    cv::resize(rgb, rgb_out, cv::Size(target_w, target_h), 0, 0, interp);
+}
+
 } // namespace opencv_ops

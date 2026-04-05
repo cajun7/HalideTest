@@ -282,6 +282,78 @@ public class MainActivity extends AppCompatActivity {
                 op = (halide) -> NativeBridge.segArgmax(width, height, 8, halide);
                 break;
             }
+            case "RGB BGR Optimized": {
+                Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.rgbBgrOptimized(inputBitmap, outputBitmap, halide);
+                break;
+            }
+            case "NV21 to RGB Optimized": {
+                byte[] nv21 = createTestNv21(width, height);
+                Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.nv21ToRgbOptimized(nv21, width, height, outputBitmap, halide);
+                break;
+            }
+            case "RGB to NV21 Optimized": {
+                int ySize = width * height;
+                int uvSize = width * (height / 2);
+                byte[] nv21Out = new byte[ySize + uvSize];
+                op = (halide) -> NativeBridge.rgbToNv21Optimized(inputBitmap, nv21Out, halide);
+                break;
+            }
+            case "Resize Bilinear Optimized (0.5x)": {
+                int ow = width / 2, oh = height / 2;
+                Bitmap outputBitmap = Bitmap.createBitmap(ow, oh, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.resizeBilinearOptimized(inputBitmap, outputBitmap, ow, oh, halide);
+                break;
+            }
+            case "Resize Area Optimized (0.5x)": {
+                int ow = width / 2, oh = height / 2;
+                Bitmap outputBitmap = Bitmap.createBitmap(ow, oh, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.resizeAreaOptimized(inputBitmap, outputBitmap, ow, oh, halide);
+                break;
+            }
+            case "Resize Bicubic Optimized (0.5x)": {
+                int ow = width / 2, oh = height / 2;
+                Bitmap outputBitmap = Bitmap.createBitmap(ow, oh, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.resizeBicubicOptimized(inputBitmap, outputBitmap, ow, oh, halide);
+                break;
+            }
+            case "NV21 Resize Bilinear Optimized": {
+                byte[] nv21 = createTestNv21(width, height);
+                int tw = width / 2, th = height / 2;
+                op = (halide) -> NativeBridge.nv21ResizeBilinearOptimized(nv21, width, height, tw, th, halide);
+                break;
+            }
+            case "NV21 Resize Area Optimized": {
+                byte[] nv21 = createTestNv21(width, height);
+                int tw = width / 2, th = height / 2;
+                op = (halide) -> NativeBridge.nv21ResizeAreaOptimized(nv21, width, height, tw, th, halide);
+                break;
+            }
+            case "NV21 Resize Bicubic Optimized": {
+                byte[] nv21 = createTestNv21(width, height);
+                int tw = width / 2, th = height / 2;
+                op = (halide) -> NativeBridge.nv21ResizeBicubicOptimized(nv21, width, height, tw, th, halide);
+                break;
+            }
+            case "NV21 Resize RGB Bilinear Optimized": {
+                byte[] nv21 = createTestNv21(width, height);
+                int tw = width / 2, th = height / 2;
+                op = (halide) -> NativeBridge.nv21ResizeRgbBilinearOptimized(nv21, width, height, tw, th, halide);
+                break;
+            }
+            case "NV21 Resize RGB Area Optimized": {
+                byte[] nv21 = createTestNv21(width, height);
+                int tw = width / 2, th = height / 2;
+                op = (halide) -> NativeBridge.nv21ResizeRgbAreaOptimized(nv21, width, height, tw, th, halide);
+                break;
+            }
+            case "NV21 Resize RGB Bicubic Optimized": {
+                byte[] nv21 = createTestNv21(width, height);
+                int tw = width / 2, th = height / 2;
+                op = (halide) -> NativeBridge.nv21ResizeRgbBicubicOptimized(nv21, width, height, tw, th, halide);
+                break;
+            }
             default: {
                 Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
                 op = (halide) -> 0L;

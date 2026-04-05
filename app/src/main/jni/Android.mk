@@ -75,6 +75,18 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_180.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_270cw.a \
     $(HALIDE_GEN_DIR)/seg_argmax.a \
+    $(HALIDE_GEN_DIR)/nv21_to_rgb_optimized.a \
+    $(HALIDE_GEN_DIR)/rgb_to_nv21_optimized.a \
+    $(HALIDE_GEN_DIR)/rgb_bgr_optimized.a \
+    $(HALIDE_GEN_DIR)/resize_bilinear_optimized.a \
+    $(HALIDE_GEN_DIR)/resize_area_optimized.a \
+    $(HALIDE_GEN_DIR)/resize_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_bilinear_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_area_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bilinear_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_area_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bicubic_optimized.a \
     $(HALIDE_GEN_DIR)/halide_runtime.a
 
 include $(BUILD_SHARED_LIBRARY)

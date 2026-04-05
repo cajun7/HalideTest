@@ -345,4 +345,83 @@ int nv21_resize_pad_rotate(Halide::Runtime::Buffer<uint8_t>& y_plane,
 int seg_argmax(Halide::Runtime::Buffer<float>& input,
                Halide::Runtime::Buffer<uint8_t>& output);
 
+// ---------------------------------------------------------------------------
+// Optimized Operations
+// ---------------------------------------------------------------------------
+// These are optimized versions of existing operations with improved scheduling,
+// wider vectorization, better tiling, and OpenCV-matching algorithms.
+
+// --- Optimized Color Space Conversions ---
+
+// NV21 -> RGB optimized: tiled Y-axis, UV prefetching, bounds check elimination
+int nv21_to_rgb_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                          Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                          Halide::Runtime::Buffer<uint8_t>& output);
+
+// RGB -> NV21 optimized: compute_at for Cr/Cb reuse, tiled scheduling
+int rgb_to_nv21_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                          Halide::Runtime::Buffer<uint8_t>& y_output,
+                          Halide::Runtime::Buffer<uint8_t>& uv_output);
+
+// RGB <-> BGR optimized: wider vectorization (32px), multi-row tiling
+int rgb_bgr_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                      Halide::Runtime::Buffer<uint8_t>& output);
+
+// --- Optimized RGB-Domain Resize (target-size) ---
+
+// Bilinear: larger tiles, prefetching, bounds check elimination
+int resize_bilinear_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                              int target_w, int target_h,
+                              Halide::Runtime::Buffer<uint8_t>& output);
+
+// INTER_AREA: wider vectors (16 vs 8), larger tiles (64 vs 32)
+int resize_area_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                          int target_w, int target_h,
+                          Halide::Runtime::Buffer<uint8_t>& output);
+
+// Bicubic: a=-0.75 matching OpenCV (not Catmull-Rom a=-0.5)
+int resize_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                             int target_w, int target_h,
+                             Halide::Runtime::Buffer<uint8_t>& output);
+
+// --- NV21-Domain Resize (output stays in NV21 format) ---
+// Resizes Y plane at full resolution and UV plane at half resolution
+// independently, avoiding the NV21->RGB->resize roundtrip.
+
+int nv21_resize_bilinear_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                   Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                   int target_w, int target_h,
+                                   Halide::Runtime::Buffer<uint8_t>& y_output,
+                                   Halide::Runtime::Buffer<uint8_t>& uv_output);
+
+int nv21_resize_area_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                               Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                               int target_w, int target_h,
+                               Halide::Runtime::Buffer<uint8_t>& y_output,
+                               Halide::Runtime::Buffer<uint8_t>& uv_output);
+
+int nv21_resize_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                  int target_w, int target_h,
+                                  Halide::Runtime::Buffer<uint8_t>& y_output,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_output);
+
+// --- Fused NV21 Resize -> RGB Pipelines ---
+// Resize in NV21 domain then convert to RGB in a single pass.
+
+int nv21_resize_rgb_bilinear_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                       Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                       int target_w, int target_h,
+                                       Halide::Runtime::Buffer<uint8_t>& output);
+
+int nv21_resize_rgb_area_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                   Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                   int target_w, int target_h,
+                                   Halide::Runtime::Buffer<uint8_t>& output);
+
+int nv21_resize_rgb_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                      Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                      int target_w, int target_h,
+                                      Halide::Runtime::Buffer<uint8_t>& output);
+
 } // namespace halide_ops

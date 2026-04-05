@@ -25,6 +25,18 @@
         <item>NV21 to RGB Full-Range</item>
         <item>NV21 Resize+Pad+Rotate (384)</item>
         <item>Seg Argmax (8 classes)</item>
+        <item>RGB BGR Optimized</item>
+        <item>NV21 to RGB Optimized</item>
+        <item>RGB to NV21 Optimized</item>
+        <item>Resize Bilinear Optimized (0.5x)</item>
+        <item>Resize Area Optimized (0.5x)</item>
+        <item>Resize Bicubic Optimized (0.5x)</item>
+        <item>NV21 Resize Bilinear Optimized</item>
+        <item>NV21 Resize Area Optimized</item>
+        <item>NV21 Resize Bicubic Optimized</item>
+        <item>NV21 Resize RGB Bilinear Optimized</item>
+        <item>NV21 Resize RGB Area Optimized</item>
+        <item>NV21 Resize RGB Bicubic Optimized</item>
     </string-array>
 
     <string-array name="resolutions">

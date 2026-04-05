@@ -859,6 +859,478 @@ Java_com_example_halidetest_NativeBridge_segArgmax(
 }
 
 // -----------------------------------------------------------------------
+// RGB <-> BGR Optimized
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_rgbBgrOptimized(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
+        halide_ops::rgb_bgr_optimized(ibuf, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_rgb, out_bgr;
+        cv::cvtColor(in_rgba, in_rgb, cv::COLOR_RGBA2RGB);
+        opencv_ops::rgb_bgr_optimized(in_rgb, out_bgr);
+        cv::Mat out_rgba;
+        cv::cvtColor(out_bgr, out_rgba, cv::COLOR_BGR2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// NV21 -> RGB Optimized
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ToRgbOptimized(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint width, jint height,
+    jobject outputBitmap, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!out_lock.is_valid()) {
+        env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+        return -1;
+    }
+
+    int w = width, h = height;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        uint8_t* y_ptr = (uint8_t*)nv21_ptr;
+        uint8_t* uv_ptr = y_ptr + w * h;
+
+        Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, w, h);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, w, h / 2);
+
+        Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+        halide_ops::nv21_to_rgb_optimized(y_buf, uv_buf, obuf);
+
+        uint8_t* dst = (uint8_t*)out_lock.pixels;
+        for (int py = 0; py < h; py++) {
+            for (int px = 0; px < w; px++) {
+                int di = (py * w + px) * 4;
+                dst[di + 0] = obuf(px, py, 0);
+                dst[di + 1] = obuf(px, py, 1);
+                dst[di + 2] = obuf(px, py, 2);
+                dst[di + 3] = 255;
+            }
+        }
+    } else {
+        cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, (uint8_t*)nv21_ptr);
+        cv::Mat rgb_out;
+        opencv_ops::nv21_to_rgb_optimized(nv21_mat, rgb_out);
+        cv::Mat rgba_out;
+        cv::cvtColor(rgb_out, rgba_out, cv::COLOR_RGB2RGBA);
+        rgba_out.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// RGB -> NV21 Optimized
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_rgbToNv21Optimized(
+    JNIEnv* env, jclass, jobject inputBitmap, jbyteArray nv21Output, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    if (!in_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int y_size = w * h;
+    int uv_size = w * (h / 2);
+
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Output, nullptr);
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
+        for (int py = 0; py < h; py++) {
+            for (int px = 0; px < w; px++) {
+                int si = (py * w + px) * 3;
+                ibuf(px, py, 0) = rgb_in[si + 0];
+                ibuf(px, py, 1) = rgb_in[si + 1];
+                ibuf(px, py, 2) = rgb_in[si + 2];
+            }
+        }
+
+        Halide::Runtime::Buffer<uint8_t> y_buf((uint8_t*)nv21_ptr, w, h);
+        uint8_t* uv_ptr = (uint8_t*)nv21_ptr + y_size;
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, w, h / 2);
+
+        halide_ops::rgb_to_nv21_optimized(ibuf, y_buf, uv_buf);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_rgb;
+        cv::cvtColor(in_rgba, in_rgb, cv::COLOR_RGBA2RGB);
+        cv::Mat nv21_mat;
+        opencv_ops::rgb_to_nv21_optimized(in_rgb, nv21_mat);
+        memcpy(nv21_ptr, nv21_mat.data, y_size + uv_size);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Output, nv21_ptr, 0);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// RGB Resize Bilinear Optimized
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_resizeBilinearOptimized(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+        halide_ops::resize_bilinear_optimized(ibuf, tw, th, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, tw, th);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_bgr, out_bgr;
+        cv::cvtColor(in_rgba, in_bgr, cv::COLOR_RGBA2BGR);
+        opencv_ops::resize_bilinear_optimized(in_bgr, out_bgr, tw, th);
+        cv::Mat out_rgba;
+        cv::cvtColor(out_bgr, out_rgba, cv::COLOR_BGR2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// RGB Resize Area Optimized
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_resizeAreaOptimized(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+        halide_ops::resize_area_optimized(ibuf, tw, th, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, tw, th);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_bgr, out_bgr;
+        cv::cvtColor(in_rgba, in_bgr, cv::COLOR_RGBA2BGR);
+        opencv_ops::resize_area_optimized(in_bgr, out_bgr, tw, th);
+        cv::Mat out_rgba;
+        cv::cvtColor(out_bgr, out_rgba, cv::COLOR_BGR2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// RGB Resize Bicubic Optimized
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_resizeBicubicOptimized(
+    JNIEnv* env, jclass, jobject inputBitmap, jobject outputBitmap,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int w = in_lock.width(), h = in_lock.height();
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(tw * th * 3);
+        rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
+
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+        halide_ops::resize_bicubic_optimized(ibuf, tw, th, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, tw, th);
+    } else {
+        cv::Mat in_rgba = in_lock.as_opencv_rgba();
+        cv::Mat in_bgr, out_bgr;
+        cv::cvtColor(in_rgba, in_bgr, cv::COLOR_RGBA2BGR);
+        opencv_ops::resize_bicubic_optimized(in_bgr, out_bgr, tw, th);
+        cv::Mat out_rgba;
+        cv::cvtColor(out_bgr, out_rgba, cv::COLOR_BGR2RGBA);
+        out_rgba.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// NV21 Resize Bilinear Optimized (output stays NV21)
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ResizeBilinearOptimized(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight;
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        uint8_t* y_ptr = (uint8_t*)nv21_ptr;
+        uint8_t* uv_ptr = y_ptr + sw * sh;
+
+        Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+
+        Halide::Runtime::Buffer<uint8_t> y_out(tw, th);
+        Halide::Runtime::Buffer<uint8_t> uv_out(tw, th / 2);
+        halide_ops::nv21_resize_bilinear_optimized(y_buf, uv_buf, tw, th, y_out, uv_out);
+    } else {
+        cv::Mat nv21_mat(sh + sh / 2, sw, CV_8UC1, (uint8_t*)nv21_ptr);
+        cv::Mat nv21_out;
+        opencv_ops::nv21_resize_optimized(nv21_mat, nv21_out, tw, th, cv::INTER_LINEAR);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// NV21 Resize Area Optimized (output stays NV21)
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ResizeAreaOptimized(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight;
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        uint8_t* y_ptr = (uint8_t*)nv21_ptr;
+        uint8_t* uv_ptr = y_ptr + sw * sh;
+
+        Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+
+        Halide::Runtime::Buffer<uint8_t> y_out(tw, th);
+        Halide::Runtime::Buffer<uint8_t> uv_out(tw, th / 2);
+        halide_ops::nv21_resize_area_optimized(y_buf, uv_buf, tw, th, y_out, uv_out);
+    } else {
+        cv::Mat nv21_mat(sh + sh / 2, sw, CV_8UC1, (uint8_t*)nv21_ptr);
+        cv::Mat nv21_out;
+        opencv_ops::nv21_resize_optimized(nv21_mat, nv21_out, tw, th, cv::INTER_AREA);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// NV21 Resize Bicubic Optimized (output stays NV21)
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ResizeBicubicOptimized(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight;
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        uint8_t* y_ptr = (uint8_t*)nv21_ptr;
+        uint8_t* uv_ptr = y_ptr + sw * sh;
+
+        Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+
+        Halide::Runtime::Buffer<uint8_t> y_out(tw, th);
+        Halide::Runtime::Buffer<uint8_t> uv_out(tw, th / 2);
+        halide_ops::nv21_resize_bicubic_optimized(y_buf, uv_buf, tw, th, y_out, uv_out);
+    } else {
+        cv::Mat nv21_mat(sh + sh / 2, sw, CV_8UC1, (uint8_t*)nv21_ptr);
+        cv::Mat nv21_out;
+        opencv_ops::nv21_resize_optimized(nv21_mat, nv21_out, tw, th, cv::INTER_CUBIC);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// Fused NV21 -> Resize -> RGB Bilinear Optimized
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ResizeRgbBilinearOptimized(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight;
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        uint8_t* y_ptr = (uint8_t*)nv21_ptr;
+        uint8_t* uv_ptr = y_ptr + sw * sh;
+
+        Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+
+        std::vector<uint8_t> rgb_out(tw * th * 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+        halide_ops::nv21_resize_rgb_bilinear_optimized(y_buf, uv_buf, tw, th, obuf);
+    } else {
+        cv::Mat nv21_mat(sh + sh / 2, sw, CV_8UC1, (uint8_t*)nv21_ptr);
+        cv::Mat rgb_out;
+        opencv_ops::nv21_resize_rgb_optimized(nv21_mat, rgb_out, tw, th, cv::INTER_LINEAR);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// Fused NV21 -> Resize -> RGB Area Optimized
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ResizeRgbAreaOptimized(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight;
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        uint8_t* y_ptr = (uint8_t*)nv21_ptr;
+        uint8_t* uv_ptr = y_ptr + sw * sh;
+
+        Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+
+        std::vector<uint8_t> rgb_out(tw * th * 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+        halide_ops::nv21_resize_rgb_area_optimized(y_buf, uv_buf, tw, th, obuf);
+    } else {
+        cv::Mat nv21_mat(sh + sh / 2, sw, CV_8UC1, (uint8_t*)nv21_ptr);
+        cv::Mat rgb_out;
+        opencv_ops::nv21_resize_rgb_optimized(nv21_mat, rgb_out, tw, th, cv::INTER_AREA);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
+// Fused NV21 -> Resize -> RGB Bicubic Optimized
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ResizeRgbBicubicOptimized(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight;
+    int tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        uint8_t* y_ptr = (uint8_t*)nv21_ptr;
+        uint8_t* uv_ptr = y_ptr + sw * sh;
+
+        Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+
+        std::vector<uint8_t> rgb_out(tw * th * 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+        halide_ops::nv21_resize_rgb_bicubic_optimized(y_buf, uv_buf, tw, th, obuf);
+    } else {
+        cv::Mat nv21_mat(sh + sh / 2, sw, CV_8UC1, (uint8_t*)nv21_ptr);
+        cv::Mat rgb_out;
+        opencv_ops::nv21_resize_rgb_optimized(nv21_mat, rgb_out, tw, th, cv::INTER_CUBIC);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
 // Utility: Append benchmark result to CSV file on device
 // -----------------------------------------------------------------------
 JNIEXPORT void JNICALL

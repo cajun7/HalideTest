@@ -113,6 +113,22 @@ MULTI_TARGET_RUNS=(
     "nv21_resize_pad_rotate_generator -g nv21_resize_pad_rotate -f nv21_resize_pad_rotate_270cw rotation_code=3"
     # Segmentation post-processing: argmax across class logits
     "seg_argmax_generator -g seg_argmax -f seg_argmax num_classes=8"
+    # --- Optimized generators ---
+    # RGB resize optimized (target-size, wider vectors, better tiling)
+    "rgb_resize_optimized_generator -g resize_bilinear_optimized -f resize_bilinear_optimized"
+    "rgb_resize_optimized_generator -g resize_area_optimized -f resize_area_optimized"
+    "rgb_resize_optimized_generator -g resize_bicubic_optimized -f resize_bicubic_optimized"
+    # NV21 resize optimized (resize directly in NV21 domain)
+    "nv21_resize_optimized_generator -g nv21_resize_bilinear_optimized -f nv21_resize_bilinear_optimized"
+    "nv21_resize_optimized_generator -g nv21_resize_area_optimized -f nv21_resize_area_optimized"
+    "nv21_resize_optimized_generator -g nv21_resize_bicubic_optimized -f nv21_resize_bicubic_optimized"
+    # NV21 <-> RGB optimized
+    "nv21_to_rgb_optimized_generator -g nv21_to_rgb_optimized -f nv21_to_rgb_optimized"
+    "rgb_to_nv21_optimized_generator -g rgb_to_nv21_optimized -f rgb_to_nv21_optimized"
+    # Fused NV21 resize -> RGB optimized
+    "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_bilinear_optimized -f nv21_resize_rgb_bilinear_optimized"
+    "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_area_optimized -f nv21_resize_rgb_area_optimized"
+    "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_bicubic_optimized -f nv21_resize_rgb_bicubic_optimized"
 )
 
 # Generators with no arithmetic benefit (pure index/channel remapping)
@@ -125,6 +141,8 @@ SINGLE_TARGET_RUNS=(
     # Flip — horizontal and vertical
     "flip_generator -g flip_fixed -f flip_horizontal flip_code=0"
     "flip_generator -g flip_fixed -f flip_vertical flip_code=1"
+    # RGB <-> BGR optimized (wider vectors, multi-row tiling)
+    "rgb_bgr_optimized_generator -g rgb_bgr_optimized -f rgb_bgr_optimized"
 )
 
 for run in "${MULTI_TARGET_RUNS[@]}"; do

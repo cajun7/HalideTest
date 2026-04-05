@@ -62,6 +62,19 @@
 #include "nv21_resize_pad_rotate_90cw.h"
 #include "nv21_resize_pad_rotate_180.h"
 #include "nv21_resize_pad_rotate_270cw.h"
+// Optimized generators
+#include "nv21_to_rgb_optimized.h"
+#include "rgb_to_nv21_optimized.h"
+#include "rgb_bgr_optimized.h"
+#include "resize_bilinear_optimized.h"
+#include "resize_area_optimized.h"
+#include "resize_bicubic_optimized.h"
+#include "nv21_resize_bilinear_optimized.h"
+#include "nv21_resize_area_optimized.h"
+#include "nv21_resize_bicubic_optimized.h"
+#include "nv21_resize_rgb_bilinear_optimized.h"
+#include "nv21_resize_rgb_area_optimized.h"
+#include "nv21_resize_rgb_bicubic_optimized.h"
 
 namespace halide_ops {
 
@@ -374,6 +387,90 @@ int nv21_resize_pad_rotate(Halide::Runtime::Buffer<uint8_t>& y_plane,
 int seg_argmax(Halide::Runtime::Buffer<float>& input,
                Halide::Runtime::Buffer<uint8_t>& output) {
     return ::seg_argmax(input, output);
+}
+
+// ---------------------------------------------------------------------------
+// Optimized Operations
+// ---------------------------------------------------------------------------
+
+int nv21_to_rgb_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                          Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                          Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_to_rgb_optimized(y_plane, uv_plane, output);
+}
+
+int rgb_to_nv21_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                          Halide::Runtime::Buffer<uint8_t>& y_output,
+                          Halide::Runtime::Buffer<uint8_t>& uv_output) {
+    return ::rgb_to_nv21_optimized(input, y_output, uv_output);
+}
+
+int rgb_bgr_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                      Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::rgb_bgr_optimized(input, output);
+}
+
+int resize_bilinear_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                              int target_w, int target_h,
+                              Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::resize_bilinear_optimized(input, target_w, target_h, output);
+}
+
+int resize_area_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                          int target_w, int target_h,
+                          Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::resize_area_optimized(input, target_w, target_h, output);
+}
+
+int resize_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& input,
+                             int target_w, int target_h,
+                             Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::resize_bicubic_optimized(input, target_w, target_h, output);
+}
+
+int nv21_resize_bilinear_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                   Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                   int target_w, int target_h,
+                                   Halide::Runtime::Buffer<uint8_t>& y_output,
+                                   Halide::Runtime::Buffer<uint8_t>& uv_output) {
+    return ::nv21_resize_bilinear_optimized(y_plane, uv_plane, target_w, target_h, y_output, uv_output);
+}
+
+int nv21_resize_area_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                               Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                               int target_w, int target_h,
+                               Halide::Runtime::Buffer<uint8_t>& y_output,
+                               Halide::Runtime::Buffer<uint8_t>& uv_output) {
+    return ::nv21_resize_area_optimized(y_plane, uv_plane, target_w, target_h, y_output, uv_output);
+}
+
+int nv21_resize_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                  int target_w, int target_h,
+                                  Halide::Runtime::Buffer<uint8_t>& y_output,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_output) {
+    return ::nv21_resize_bicubic_optimized(y_plane, uv_plane, target_w, target_h, y_output, uv_output);
+}
+
+int nv21_resize_rgb_bilinear_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                       Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                       int target_w, int target_h,
+                                       Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_resize_rgb_bilinear_optimized(y_plane, uv_plane, target_w, target_h, output);
+}
+
+int nv21_resize_rgb_area_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                   Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                   int target_w, int target_h,
+                                   Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_resize_rgb_area_optimized(y_plane, uv_plane, target_w, target_h, output);
+}
+
+int nv21_resize_rgb_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                      Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                      int target_w, int target_h,
+                                      Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_resize_rgb_bicubic_optimized(y_plane, uv_plane, target_w, target_h, output);
 }
 
 } // namespace halide_ops

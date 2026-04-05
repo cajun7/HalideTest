@@ -38,12 +38,20 @@ LOCAL_SRC_FILES := \
     ../test_nv21_full_range.cpp \
     ../test_nv21_yuv444.cpp \
     ../test_nv21_resize_pad_rotate.cpp \
-    ../test_seg_argmax.cpp
+    ../test_seg_argmax.cpp \
+    ../test_rgb_resize_optimized.cpp \
+    ../test_nv21_resize_optimized.cpp \
+    ../test_nv21_rgb_optimized.cpp \
+    ../test_rgb_bgr_optimized.cpp \
+    ../test_nv21_resize_rgb_optimized.cpp \
+    ../test_bench_optimized.cpp \
+    ../../main/jni/halide_ops.cpp
 
 LOCAL_C_INCLUDES += \
     $(HALIDE_INCLUDE) \
     $(HALIDE_GEN_DIR) \
-    $(LOCAL_PATH)/..
+    $(LOCAL_PATH)/.. \
+    $(LOCAL_PATH)/../../main/jni
 
 LOCAL_LDLIBS += -llog -lm
 
@@ -85,6 +93,18 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_180.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_270cw.a \
     $(HALIDE_GEN_DIR)/seg_argmax.a \
+    $(HALIDE_GEN_DIR)/nv21_to_rgb_optimized.a \
+    $(HALIDE_GEN_DIR)/rgb_to_nv21_optimized.a \
+    $(HALIDE_GEN_DIR)/rgb_bgr_optimized.a \
+    $(HALIDE_GEN_DIR)/resize_bilinear_optimized.a \
+    $(HALIDE_GEN_DIR)/resize_area_optimized.a \
+    $(HALIDE_GEN_DIR)/resize_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_bilinear_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_area_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bilinear_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_area_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bicubic_optimized.a \
     $(HALIDE_GEN_DIR)/halide_runtime.a
 
 # GoogleTest requires RTTI

@@ -162,6 +162,101 @@ public class NativeBridge {
     public static native long segArgmax(int width, int height, int numClasses,
                                          boolean useHalide);
 
+    // ---- Optimized operations ----
+
+    /**
+     * RGB <-> BGR optimized (wider SIMD, multi-row tiles).
+     * @return execution time in microseconds
+     */
+    public static native long rgbBgrOptimized(Bitmap inputBitmap, Bitmap outputBitmap,
+                                               boolean useHalide);
+
+    /**
+     * NV21 to RGB optimized (tiled, prefetch, unsafe_promise_clamped).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ToRgbOptimized(byte[] nv21Data, int width, int height,
+                                                  Bitmap outputBitmap, boolean useHalide);
+
+    /**
+     * RGB to NV21 optimized (tiled Y+UV, compute_at for chroma).
+     * @return execution time in microseconds
+     */
+    public static native long rgbToNv21Optimized(Bitmap inputBitmap, byte[] nv21Output,
+                                                  boolean useHalide);
+
+    /**
+     * RGB bilinear resize optimized (fixed-point weights, prefetch).
+     * @return execution time in microseconds
+     */
+    public static native long resizeBilinearOptimized(Bitmap inputBitmap, Bitmap outputBitmap,
+                                                       int targetWidth, int targetHeight,
+                                                       boolean useHalide);
+
+    /**
+     * RGB area resize optimized (wider vectorization, better tiling).
+     * @return execution time in microseconds
+     */
+    public static native long resizeAreaOptimized(Bitmap inputBitmap, Bitmap outputBitmap,
+                                                   int targetWidth, int targetHeight,
+                                                   boolean useHalide);
+
+    /**
+     * RGB bicubic resize optimized (a=-0.75 matching OpenCV).
+     * @return execution time in microseconds
+     */
+    public static native long resizeBicubicOptimized(Bitmap inputBitmap, Bitmap outputBitmap,
+                                                      int targetWidth, int targetHeight,
+                                                      boolean useHalide);
+
+    /**
+     * NV21-domain bilinear resize optimized (output stays NV21).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizeBilinearOptimized(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                           int targetWidth, int targetHeight,
+                                                           boolean useHalide);
+
+    /**
+     * NV21-domain area resize optimized (output stays NV21).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizeAreaOptimized(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                       int targetWidth, int targetHeight,
+                                                       boolean useHalide);
+
+    /**
+     * NV21-domain bicubic resize optimized (output stays NV21).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizeBicubicOptimized(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                          int targetWidth, int targetHeight,
+                                                          boolean useHalide);
+
+    /**
+     * Fused NV21 -> bilinear resize -> RGB optimized (single pass).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizeRgbBilinearOptimized(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                              int targetWidth, int targetHeight,
+                                                              boolean useHalide);
+
+    /**
+     * Fused NV21 -> area resize -> RGB optimized (single pass).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizeRgbAreaOptimized(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                          int targetWidth, int targetHeight,
+                                                          boolean useHalide);
+
+    /**
+     * Fused NV21 -> bicubic resize -> RGB optimized (single pass).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizeRgbBicubicOptimized(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                             int targetWidth, int targetHeight,
+                                                             boolean useHalide);
+
     /**
      * Append a CSV line to a file on device storage.
      */
