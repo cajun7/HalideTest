@@ -68,6 +68,9 @@
 #include "rgb_bgr_optimized.h"
 #include "resize_bilinear_optimized.h"
 #include "resize_area_optimized.h"
+#include "resize_area_2x.h"
+#include "resize_area_3x.h"
+#include "resize_area_4x.h"
 #include "resize_bicubic_optimized.h"
 #include "nv21_resize_bilinear_optimized.h"
 #include "nv21_resize_area_optimized.h"
@@ -243,8 +246,8 @@ int resize_bicubic_target(Halide::Runtime::Buffer<uint8_t>& input,
 int resize_area_target(Halide::Runtime::Buffer<uint8_t>& input,
                        int target_w, int target_h,
                        Halide::Runtime::Buffer<uint8_t>& output) {
-    // Redirected to optimized (wider vectors, larger tiles).
-    return ::resize_area_optimized(input, target_w, target_h, output);
+    // Dispatch through optimized path (includes integer ratio fast paths).
+    return halide_ops::resize_area_optimized(input, target_w, target_h, output);
 }
 
 // ---------------------------------------------------------------------------
@@ -423,6 +426,16 @@ int resize_bilinear_optimized(Halide::Runtime::Buffer<uint8_t>& input,
 int resize_area_optimized(Halide::Runtime::Buffer<uint8_t>& input,
                           int target_w, int target_h,
                           Halide::Runtime::Buffer<uint8_t>& output) {
+    // Runtime dispatch: integer ratio fast paths (matches OpenCV resizeAreaFast)
+    int src_w = input.dim(0).extent();
+    int src_h = input.dim(1).extent();
+    if (src_w == target_w * 2 && src_h == target_h * 2)
+        return ::resize_area_2x(input, target_w, target_h, output);
+    if (src_w == target_w * 3 && src_h == target_h * 3)
+        return ::resize_area_3x(input, target_w, target_h, output);
+    if (src_w == target_w * 4 && src_h == target_h * 4)
+        return ::resize_area_4x(input, target_w, target_h, output);
+    // Generic path for non-integer ratios
     return ::resize_area_optimized(input, target_w, target_h, output);
 }
 

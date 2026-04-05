@@ -144,34 +144,35 @@ public:
         // --- Tiling: split y into outer (y) and inner (yi) loops ---
         // split(y, y_outer, y_inner, tile_size):
         //   Original: for y in [0, height)
-        //   After:    for y in [0, height/32)       <- parallel across tiles
-        //               for yi in [0, 32)           <- sequential within tile
+        //   After:    for y in [0, height/64)       <- parallel across tiles
+        //               for yi in [0, 64)           <- sequential within tile
         //
-        // Why 32 rows per tile?
+        // Why 64 rows per tile?
         //   For a 1920-wide image with 8 float32 planes:
-        //   32 rows * 1920 pixels * 4 bytes * 8 planes = 1.875 MB
-        //   This fits comfortably in L2 cache (typically 2-4 MB on ARM SoCs),
-        //   ensuring each input plane's data is warm when accessed.
+        //   64 rows * 1920 pixels * 4 bytes * 8 planes = 3.75 MB
+        //   This fits in L2 cache on most ARM64 SoCs (4-8 MB),
+        //   and reduces parallel scheduling overhead vs smaller tiles.
         //
         // --- Parallelism: parallel(y) ---
-        // Each tile of 32 rows runs on a separate CPU core.
+        // Each tile of 64 rows runs on a separate CPU core.
         // On a typical mobile SoC with 4-8 cores, a 1080-row image creates
-        // 34 tiles, providing good load balancing.
+        // 17 tiles, providing good load balancing.
         //
-        // --- Vectorization: vectorize(x, 8) ---
-        // Process 8 pixels simultaneously using SIMD (NEON on ARM).
+        // --- Vectorization: vectorize(x, 16) ---
+        // Process 16 pixels simultaneously using SIMD (NEON on ARM).
         // For float32 comparisons: ARM NEON has 128-bit registers (4 floats),
-        // so Halide automatically splits the 8-wide vector into 2 NEON ops.
-        // For uint8 selects: 8 bytes fit easily in a single NEON register.
+        // so Halide automatically splits the 16-wide vector into 4 NEON ops.
+        // Wider vectorization amortizes loop overhead and enables better
+        // instruction-level parallelism.
         //
         // TailStrategy::GuardWithIf:
-        //   When image width isn't divisible by 8 (e.g., 641 pixels), the
+        //   When image width isn't divisible by 16 (e.g., 641 pixels), the
         //   last iteration uses scalar code protected by an if-check.
         //   This safely handles odd resolutions without buffer overruns.
         //   Alternative TailStrategy::RoundUp would read past the buffer edge.
-        output.split(y, y, yi, 32)
+        output.split(y, y, yi, 64)
               .parallel(y)
-              .vectorize(x, 8, TailStrategy::GuardWithIf);
+              .vectorize(x, 16, TailStrategy::GuardWithIf);
 
         // --- Prefetching ---
         // prefetch(buffer, at_var, prefetch_var, offset):

@@ -15,6 +15,18 @@
 // we can decompose it into two 1D passes requiring only 2*K operations per
 // pixel (e.g., 10 for 5x5). This is a classic image processing optimization.
 //
+// ## Optimizations (over baseline float approach)
+//
+// 1. Q10 fixed-point arithmetic: kernel weights scaled to integers summing
+//    to 1024. Intermediate stored as int16, enabling 8-wide NEON vectorization
+//    (vs 4-wide for float32). Accumulation in int32, normalized via >>10.
+//
+// 2. Sliding window: store_at(yi)/compute_at(y) reuses horizontal-pass rows
+//    across adjacent output rows. For radius=2, each row is used by 5 output
+//    rows — eliminates ~80% redundant H-pass computation.
+//
+// 3. Larger tiles (64 rows vs 32) for better parallel efficiency.
+//
 // ## Boundary Handling: repeat_edge
 //
 // repeat_edge clamps out-of-bounds coordinates to the nearest edge pixel:
@@ -28,7 +40,7 @@
 //
 // Computed at generator time (compile-time) using the standard Gaussian formula:
 //   w(i) = exp(-i^2 / (2 * sigma^2))
-// Then normalized so all weights sum to 1.0.
+// Then converted to Q10 integers (sum = 1024) for fixed-point computation.
 //
 // sigma is derived from radius as sigma = radius/2.0, with a minimum of 0.5.
 //
@@ -44,11 +56,6 @@ using namespace Halide::BoundaryConditions;
 // ---------------------------------------------------------------------------
 class GaussianBlurY : public Generator<GaussianBlurY> {
 public:
-    // GeneratorParam: compile-time parameter baked into the AOT code.
-    // Changing radius requires re-running the generator, but the resulting
-    // code has zero runtime overhead from the parameter.
-    //
-    // Kernel size = 2*radius+1. Default radius=2 -> 5x5 kernel.
     GeneratorParam<int> radius{"radius", 2};
 
     Input<Buffer<uint8_t, 2>> input{"input"};   // width x height (single channel)
@@ -59,71 +66,66 @@ public:
     void generate() {
         int r = radius;
 
-        // repeat_edge: boundary condition that clamps coordinates to [0, extent-1].
-        // Returns a Func that can be accessed at any coordinate safely.
         Func clamped = repeat_edge(input);
 
-        // Pre-compute Gaussian kernel weights.
-        // This C++ loop runs at GENERATOR TIME (on the host machine), not at
-        // runtime on the target device. The resulting weights become compile-time
-        // constants embedded in the generated code.
+        // Compute Q10 kernel weights at generator time.
+        // This C++ code runs on the host machine, not on the target device.
+        // The resulting integer weights become compile-time constants.
         float sigma = r / 2.0f;
-        if (sigma < 0.5f) sigma = 0.5f;  // Minimum sigma to ensure meaningful blur
-        std::vector<float> kernel_weights(2 * r + 1);
+        if (sigma < 0.5f) sigma = 0.5f;
+        std::vector<float> kernel_f(2 * r + 1);
         float sum = 0.0f;
         for (int i = -r; i <= r; i++) {
-            kernel_weights[i + r] = std::exp(-(float)(i * i) / (2.0f * sigma * sigma));
-            sum += kernel_weights[i + r];
+            kernel_f[i + r] = std::exp(-(float)(i * i) / (2.0f * sigma * sigma));
+            sum += kernel_f[i + r];
         }
-        for (auto& w : kernel_weights) w /= sum;  // Normalize so weights sum to 1.0
+        // Convert to Q10 integer weights (sum = 1024)
+        std::vector<int> kernel_q10(2 * r + 1);
+        int q10_sum = 0;
+        for (int i = 0; i < 2 * r + 1; i++) {
+            kernel_q10[i] = (int)(kernel_f[i] / sum * 1024.0f + 0.5f);
+            q10_sum += kernel_q10[i];
+        }
+        // Adjust center weight to ensure exact sum of 1024
+        kernel_q10[r] += (1024 - q10_sum);
 
         // --- Horizontal pass ---
-        // For each pixel (x,y), sum weighted neighbors along x-axis.
-        // This C++ for-loop unrolls at generator time, producing a chain of
-        // multiply-add operations (no loop at runtime).
+        // Accumulate in int32, normalize to int16 via >>10.
+        // Max accumulation: (2r+1) × 1024 × 255 = 1,305,600 → fits int32.
+        // After >>10: max ~255, stored as int16 (max 32767) ✓
         Func blur_x("blur_x");
-        Expr val_x = cast<float>(0);
+        Expr h_acc = cast<int32_t>(0);
         for (int i = -r; i <= r; i++) {
-            val_x += cast<float>(clamped(x + i, y)) * kernel_weights[i + r];
+            h_acc += cast<int32_t>(kernel_q10[i + r]) *
+                     cast<int32_t>(clamped(x + i, y));
         }
-        blur_x(x, y) = val_x;
+        blur_x(x, y) = cast<int16_t>((h_acc + 512) >> 10);
 
         // --- Vertical pass ---
-        // For each pixel (x,y), sum weighted neighbors along y-axis
-        // using the horizontal-blurred intermediate result.
-        Func blur_y("blur_y");
-        Expr val_y = cast<float>(0);
+        // Accumulate in int32, normalize to uint8 via >>10 + clamp.
+        Expr v_acc = cast<int32_t>(0);
         for (int i = -r; i <= r; i++) {
-            val_y += blur_x(x, y + i) * kernel_weights[i + r];
+            v_acc += cast<int32_t>(kernel_q10[i + r]) *
+                     cast<int32_t>(blur_x(x, y + i));
         }
-        blur_y(x, y) = val_y;
-
-        // Clamp result to [0, 255] and convert back to uint8.
-        output(x, y) = cast<uint8_t>(clamp(blur_y(x, y), 0.0f, 255.0f));
+        output(x, y) = cast<uint8_t>(clamp((v_acc + 512) >> 10, 0, 255));
 
         // --- Schedule for ARM NEON ---
         //
-        // compute_at(output, y): Compute blur_x values just before they're
-        // needed for each output row. This means blur_x results are computed
-        // per row strip and stay in L1 cache for the vertical pass.
-        //
-        // TailStrategy::RoundUp on blur_x: Compute extra elements past the
-        // row end (they'll be discarded). This avoids the scalar tail loop
-        // overhead on intermediates where the extra reads are safe (repeat_edge).
-        blur_x.compute_at(output, y)
-              .vectorize(x, 16, TailStrategy::RoundUp);
-
-        // split(y, y, yi, 32): Tile the y dimension into 32-row strips.
-        // GuardWithIf on the final output ensures correct handling when
-        // height isn't divisible by 32.
-        output.split(y, y, yi, 32)
+        // Sliding window: store_at(yi) allocates a ring buffer for the tile,
+        // compute_at(y) computes rows lazily. Halide reuses previously computed
+        // rows — for radius=2, each blur_x row is computed once and used 5 times.
+        // Sliding window: store buffer at outer tile level (y), compute rows
+        // lazily per inner row (yi). Halide reuses previously computed rows —
+        // for radius=2, each blur_x row is computed once and used 5 times.
+        output.split(y, y, yi, 64)
               .parallel(y)
               .vectorize(x, 16, TailStrategy::GuardWithIf);
 
-        // prefetch(input, y, y, 2): Insert hardware prefetch instructions
-        // to load input rows 2 iterations ahead of the current y position.
-        // On ARM, this compiles to PLD/PRFM instructions that fill cache lines
-        // before data is needed, hiding memory latency.
+        blur_x.store_at(output, y)
+              .compute_at(output, yi)
+              .vectorize(x, 16, TailStrategy::RoundUp);
+
         output.prefetch(input, y, y, 2);
     }
 };
@@ -133,8 +135,8 @@ HALIDE_REGISTER_GENERATOR(GaussianBlurY, gaussian_blur_y)
 // ---------------------------------------------------------------------------
 // Gaussian Blur on 3-channel RGB (interleaved)
 // ---------------------------------------------------------------------------
-// Same separable approach, applied to each channel independently via
-// the c dimension. Interleaved layout: R0 G0 B0 R1 G1 B1 ...
+// Same Q10 fixed-point separable approach, applied to each channel
+// independently via the c dimension. Interleaved layout: R0 G0 B0 R1 G1 B1 ...
 class GaussianBlurRgb : public Generator<GaussianBlurRgb> {
 public:
     GeneratorParam<int> radius{"radius", 2};
@@ -148,57 +150,58 @@ public:
         int r = radius;
         Func clamped = repeat_edge(input);
 
-        // Same kernel computation as GaussianBlurY
+        // Same Q10 kernel computation as GaussianBlurY
         float sigma = r / 2.0f;
         if (sigma < 0.5f) sigma = 0.5f;
-        std::vector<float> kernel_weights(2 * r + 1);
+        std::vector<float> kernel_f(2 * r + 1);
         float sum = 0.0f;
         for (int i = -r; i <= r; i++) {
-            kernel_weights[i + r] = std::exp(-(float)(i * i) / (2.0f * sigma * sigma));
-            sum += kernel_weights[i + r];
+            kernel_f[i + r] = std::exp(-(float)(i * i) / (2.0f * sigma * sigma));
+            sum += kernel_f[i + r];
         }
-        for (auto& w : kernel_weights) w /= sum;
+        std::vector<int> kernel_q10(2 * r + 1);
+        int q10_sum = 0;
+        for (int i = 0; i < 2 * r + 1; i++) {
+            kernel_q10[i] = (int)(kernel_f[i] / sum * 1024.0f + 0.5f);
+            q10_sum += kernel_q10[i];
+        }
+        kernel_q10[r] += (1024 - q10_sum);
 
-        // Horizontal pass (operates on each channel via the c variable)
+        // Horizontal pass with channel dimension
         Func blur_x("blur_x");
-        Expr val_x = cast<float>(0);
+        Expr h_acc = cast<int32_t>(0);
         for (int i = -r; i <= r; i++) {
-            val_x += cast<float>(clamped(x + i, y, c)) * kernel_weights[i + r];
+            h_acc += cast<int32_t>(kernel_q10[i + r]) *
+                     cast<int32_t>(clamped(x + i, y, c));
         }
-        blur_x(x, y, c) = val_x;
+        blur_x(x, y, c) = cast<int16_t>((h_acc + 512) >> 10);
 
         // Vertical pass
-        Func blur_y("blur_y");
-        Expr val_y = cast<float>(0);
+        Expr v_acc = cast<int32_t>(0);
         for (int i = -r; i <= r; i++) {
-            val_y += blur_x(x, y + i, c) * kernel_weights[i + r];
+            v_acc += cast<int32_t>(kernel_q10[i + r]) *
+                     cast<int32_t>(blur_x(x, y + i, c));
         }
-        blur_y(x, y, c) = val_y;
-
-        output(x, y, c) = cast<uint8_t>(clamp(blur_y(x, y, c), 0.0f, 255.0f));
+        output(x, y, c) = cast<uint8_t>(clamp((v_acc + 512) >> 10, 0, 255));
 
         // --- Schedule for ARM NEON ---
-        //
-        // For interleaved RGB, we process all 3 channels per pixel in the
-        // innermost loop (.reorder(c, x, y), .unroll(c)). This matches
-        // the memory layout and allows the compiler to load one RGB triplet
-        // and process all channels together.
         output.reorder(c, x, y)
               .bound(c, 0, 3)
               .unroll(c);
 
-        blur_x.compute_at(output, y)
+        output.split(y, y, yi, 64)
+              .parallel(y)
+              .vectorize(x, 16, TailStrategy::GuardWithIf);
+
+        blur_x.store_at(output, y)
+              .compute_at(output, yi)
               .reorder(c, x, y)
               .unroll(c)
               .vectorize(x, 16, TailStrategy::RoundUp);
 
-        output.split(y, y, yi, 32)
-              .parallel(y)
-              .vectorize(x, 16, TailStrategy::GuardWithIf);
-
         output.prefetch(input, y, y, 2);
 
-        // Interleaved layout constraints (see rgb_bgr_generator.cpp for details)
+        // Interleaved layout constraints
         input.dim(0).set_stride(3);
         input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);

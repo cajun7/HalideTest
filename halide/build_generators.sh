@@ -117,6 +117,10 @@ MULTI_TARGET_RUNS=(
     # RGB resize optimized (target-size, wider vectors, better tiling)
     "rgb_resize_optimized_generator -g resize_bilinear_optimized -f resize_bilinear_optimized"
     "rgb_resize_optimized_generator -g resize_area_optimized -f resize_area_optimized"
+    # INTER_AREA integer ratio fast paths (2x, 3x, 4x block average)
+    "rgb_resize_optimized_generator -g resize_area_nx -f resize_area_2x ratio=2"
+    "rgb_resize_optimized_generator -g resize_area_nx -f resize_area_3x ratio=3"
+    "rgb_resize_optimized_generator -g resize_area_nx -f resize_area_4x ratio=4"
     "rgb_resize_optimized_generator -g resize_bicubic_optimized -f resize_bicubic_optimized"
     # NV21 resize optimized (resize directly in NV21 domain)
     "nv21_resize_optimized_generator -g nv21_resize_bilinear_optimized -f nv21_resize_bilinear_optimized"

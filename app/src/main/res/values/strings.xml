@@ -3,40 +3,25 @@
     <string name="app_name">HalideTest</string>
 
     <string-array name="operations">
-        <item>RGB to BGR</item>
-        <item>NV21 to RGB</item>
-        <item>Gaussian Blur (5x5)</item>
-        <item>Lens Blur (r=4)</item>
-        <item>Resize Bilinear (0.5x)</item>
-        <item>Resize Bicubic (0.5x)</item>
-        <item>Rotate 90</item>
-        <item>Rotate Arbitrary (45°)</item>
-        <item>RGB to NV21</item>
-        <item>Resize Area (0.5x)</item>
-        <item>Resize Letterbox (720p)</item>
-        <item>Flip Horizontal</item>
-        <item>Flip Vertical</item>
-        <item>Resize Bilinear Target (720p)</item>
-        <item>Resize Bicubic Target (720p)</item>
-        <item>Resize Area Target (720p)</item>
-        <item>NV21 Pipeline Bilinear (rotate+resize)</item>
-        <item>NV21 Pipeline Area (rotate+resize)</item>
-        <item>NV21 YUV444 RGB (bilinear UV)</item>
-        <item>NV21 to RGB Full-Range</item>
-        <item>NV21 Resize+Pad+Rotate (384)</item>
-        <item>Seg Argmax (8 classes)</item>
-        <item>RGB BGR Optimized</item>
-        <item>NV21 to RGB Optimized</item>
-        <item>RGB to NV21 Optimized</item>
-        <item>Resize Bilinear Optimized (0.5x)</item>
-        <item>Resize Area Optimized (0.5x)</item>
-        <item>Resize Bicubic Optimized (0.5x)</item>
-        <item>NV21 Resize Bilinear Optimized</item>
-        <item>NV21 Resize Area Optimized</item>
-        <item>NV21 Resize Bicubic Optimized</item>
-        <item>NV21 Resize RGB Bilinear Optimized</item>
-        <item>NV21 Resize RGB Area Optimized</item>
-        <item>NV21 Resize RGB Bicubic Optimized</item>
+        <item>RGB BGR</item>                           <!-- 0  -->
+        <item>NV21 to RGB</item>                       <!-- 1  -->
+        <item>RGB to NV21</item>                       <!-- 2  -->
+        <item>NV21 YUV444 RGB (bilinear UV)</item>     <!-- 3  -->
+        <item>NV21 to RGB Full-Range</item>            <!-- 4  -->
+        <item>Gaussian Blur (5x5)</item>               <!-- 5  -->
+        <item>Lens Blur (r=4)</item>                   <!-- 6  -->
+        <item>Resize Bilinear</item>                   <!-- 7  -->
+        <item>Resize Bicubic</item>                    <!-- 8  -->
+        <item>Resize Area</item>                       <!-- 9  -->
+        <item>Resize Letterbox (720p)</item>            <!-- 10 -->
+        <item>Rotate 90</item>                         <!-- 11 -->
+        <item>Rotate Arbitrary (45°)</item>            <!-- 12 -->
+        <item>Flip</item>                              <!-- 13 -->
+        <item>NV21 Pipeline (rotate+resize)</item>     <!-- 14 -->
+        <item>NV21 Resize+Pad+Rotate (384)</item>      <!-- 15 -->
+        <item>NV21 Resize (stay NV21)</item>           <!-- 16 -->
+        <item>NV21 Resize+RGB (fused)</item>           <!-- 17 -->
+        <item>Seg Argmax (8 classes)</item>             <!-- 18 -->
     </string-array>
 
     <string-array name="resolutions">

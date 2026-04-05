@@ -444,16 +444,38 @@ public class MainActivity extends AppCompatActivity {
         final int h = height;
 
         switch (opName) {
-            case "RGB to BGR": {
+            case "RGB BGR": {
                 Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.rgbBgr(inputBitmap, outputBitmap, halide);
+                op = (halide) -> NativeBridge.rgbBgrOptimized(inputBitmap, outputBitmap, halide);
                 or.outputBitmap = outputBitmap;
                 break;
             }
             case "NV21 to RGB": {
                 byte[] nv21 = getNv21Input(w, h);
                 Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.nv21ToRgb(nv21, w, h, outputBitmap, halide);
+                op = (halide) -> NativeBridge.nv21ToRgbOptimized(nv21, w, h, outputBitmap, halide);
+                or.outputBitmap = outputBitmap;
+                break;
+            }
+            case "RGB to NV21": {
+                int ySize = w * h;
+                int uvSize = w * (h / 2);
+                byte[] nv21Out = new byte[ySize + uvSize];
+                op = (halide) -> NativeBridge.rgbToNv21Optimized(inputBitmap, nv21Out, halide);
+                or.outputNv21 = nv21Out;
+                break;
+            }
+            case "NV21 YUV444 RGB (bilinear UV)": {
+                byte[] nv21 = getNv21Input(w, h);
+                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.nv21Yuv444Rgb(nv21, w, h, outputBitmap, halide);
+                or.outputBitmap = outputBitmap;
+                break;
+            }
+            case "NV21 to RGB Full-Range": {
+                byte[] nv21 = getNv21Input(w, h);
+                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.nv21ToRgbFullRange(nv21, w, h, outputBitmap, halide);
                 or.outputBitmap = outputBitmap;
                 break;
             }
@@ -469,17 +491,33 @@ public class MainActivity extends AppCompatActivity {
                 or.outputBitmap = outputBitmap;
                 break;
             }
-            case "Resize Bilinear (0.5x)": {
+            case "Resize Bilinear": {
                 Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resize(inputBitmap, outputBitmap, targetW, targetH, false, halide);
+                op = (halide) -> NativeBridge.resizeBilinearOptimized(inputBitmap, outputBitmap, targetW, targetH, halide);
                 or.outputBitmap = outputBitmap;
                 or.outputWidth = targetW;
                 or.outputHeight = targetH;
                 break;
             }
-            case "Resize Bicubic (0.5x)": {
+            case "Resize Bicubic": {
                 Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resize(inputBitmap, outputBitmap, targetW, targetH, true, halide);
+                op = (halide) -> NativeBridge.resizeBicubicOptimized(inputBitmap, outputBitmap, targetW, targetH, halide);
+                or.outputBitmap = outputBitmap;
+                or.outputWidth = targetW;
+                or.outputHeight = targetH;
+                break;
+            }
+            case "Resize Area": {
+                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.resizeAreaOptimized(inputBitmap, outputBitmap, targetW, targetH, halide);
+                or.outputBitmap = outputBitmap;
+                or.outputWidth = targetW;
+                or.outputHeight = targetH;
+                break;
+            }
+            case "Resize Letterbox (720p)": {
+                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.resizeLetterbox(inputBitmap, outputBitmap, targetW, targetH, halide);
                 or.outputBitmap = outputBitmap;
                 or.outputWidth = targetW;
                 or.outputHeight = targetH;
@@ -499,94 +537,18 @@ public class MainActivity extends AppCompatActivity {
                 or.outputBitmap = outputBitmap;
                 break;
             }
-            case "RGB to NV21": {
-                int ySize = w * h;
-                int uvSize = w * (h / 2);
-                byte[] nv21Out = new byte[ySize + uvSize];
-                op = (halide) -> NativeBridge.rgbToNv21(inputBitmap, nv21Out, halide);
-                or.outputNv21 = nv21Out;
-                break;
-            }
-            case "Resize Area (0.5x)": {
-                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resizeArea(inputBitmap, outputBitmap, targetW, targetH, halide);
-                or.outputBitmap = outputBitmap;
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "Resize Letterbox (720p)": {
-                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resizeLetterbox(inputBitmap, outputBitmap, targetW, targetH, halide);
-                or.outputBitmap = outputBitmap;
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "Flip Horizontal": {
+            case "Flip": {
                 Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
                 op = (halide) -> NativeBridge.flip(inputBitmap, outputBitmap, true, halide);
                 or.outputBitmap = outputBitmap;
                 break;
             }
-            case "Flip Vertical": {
-                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.flip(inputBitmap, outputBitmap, false, halide);
-                or.outputBitmap = outputBitmap;
-                break;
-            }
-            case "Resize Bilinear Target (720p)": {
-                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resizeBilinearTarget(inputBitmap, outputBitmap, targetW, targetH, halide);
-                or.outputBitmap = outputBitmap;
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "Resize Bicubic Target (720p)": {
-                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resizeBicubicTarget(inputBitmap, outputBitmap, targetW, targetH, halide);
-                or.outputBitmap = outputBitmap;
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "Resize Area Target (720p)": {
-                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resizeAreaTarget(inputBitmap, outputBitmap, targetW, targetH, halide);
-                or.outputBitmap = outputBitmap;
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "NV21 Pipeline Bilinear (rotate+resize)": {
+            case "NV21 Pipeline (rotate+resize)": {
                 byte[] nv21 = getNv21Input(w, h);
                 op = (halide) -> NativeBridge.nv21RotateResizeRgb(nv21, w, h,
                         90, 0, targetW, targetH, false, halide);
                 or.outputWidth = targetW;
                 or.outputHeight = targetH;
-                break;
-            }
-            case "NV21 Pipeline Area (rotate+resize)": {
-                byte[] nv21 = getNv21Input(w, h);
-                op = (halide) -> NativeBridge.nv21RotateResizeRgb(nv21, w, h,
-                        90, 0, targetW, targetH, true, halide);
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "NV21 YUV444 RGB (bilinear UV)": {
-                byte[] nv21 = getNv21Input(w, h);
-                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.nv21Yuv444Rgb(nv21, w, h, outputBitmap, halide);
-                or.outputBitmap = outputBitmap;
-                break;
-            }
-            case "NV21 to RGB Full-Range": {
-                byte[] nv21 = getNv21Input(w, h);
-                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.nv21ToRgbFullRange(nv21, w, h, outputBitmap, halide);
-                or.outputBitmap = outputBitmap;
                 break;
             }
             case "NV21 Resize+Pad+Rotate (384)": {
@@ -598,95 +560,22 @@ public class MainActivity extends AppCompatActivity {
                 or.outputHeight = targetSize;
                 break;
             }
-            case "Seg Argmax (8 classes)": {
-                op = (halide) -> NativeBridge.segArgmax(w, h, 8, halide);
-                break;
-            }
-            case "RGB BGR Optimized": {
-                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.rgbBgrOptimized(inputBitmap, outputBitmap, halide);
-                or.outputBitmap = outputBitmap;
-                break;
-            }
-            case "NV21 to RGB Optimized": {
-                byte[] nv21 = getNv21Input(w, h);
-                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.nv21ToRgbOptimized(nv21, w, h, outputBitmap, halide);
-                or.outputBitmap = outputBitmap;
-                break;
-            }
-            case "RGB to NV21 Optimized": {
-                int ySize = w * h;
-                int uvSize = w * (h / 2);
-                byte[] nv21Out = new byte[ySize + uvSize];
-                op = (halide) -> NativeBridge.rgbToNv21Optimized(inputBitmap, nv21Out, halide);
-                or.outputNv21 = nv21Out;
-                break;
-            }
-            case "Resize Bilinear Optimized (0.5x)": {
-                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resizeBilinearOptimized(inputBitmap, outputBitmap, targetW, targetH, halide);
-                or.outputBitmap = outputBitmap;
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "Resize Area Optimized (0.5x)": {
-                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resizeAreaOptimized(inputBitmap, outputBitmap, targetW, targetH, halide);
-                or.outputBitmap = outputBitmap;
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "Resize Bicubic Optimized (0.5x)": {
-                Bitmap outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                op = (halide) -> NativeBridge.resizeBicubicOptimized(inputBitmap, outputBitmap, targetW, targetH, halide);
-                or.outputBitmap = outputBitmap;
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "NV21 Resize Bilinear Optimized": {
+            case "NV21 Resize (stay NV21)": {
                 byte[] nv21 = getNv21Input(w, h);
                 op = (halide) -> NativeBridge.nv21ResizeBilinearOptimized(nv21, w, h, targetW, targetH, halide);
                 or.outputWidth = targetW;
                 or.outputHeight = targetH;
                 break;
             }
-            case "NV21 Resize Area Optimized": {
-                byte[] nv21 = getNv21Input(w, h);
-                op = (halide) -> NativeBridge.nv21ResizeAreaOptimized(nv21, w, h, targetW, targetH, halide);
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "NV21 Resize Bicubic Optimized": {
-                byte[] nv21 = getNv21Input(w, h);
-                op = (halide) -> NativeBridge.nv21ResizeBicubicOptimized(nv21, w, h, targetW, targetH, halide);
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "NV21 Resize RGB Bilinear Optimized": {
+            case "NV21 Resize+RGB (fused)": {
                 byte[] nv21 = getNv21Input(w, h);
                 op = (halide) -> NativeBridge.nv21ResizeRgbBilinearOptimized(nv21, w, h, targetW, targetH, halide);
                 or.outputWidth = targetW;
                 or.outputHeight = targetH;
                 break;
             }
-            case "NV21 Resize RGB Area Optimized": {
-                byte[] nv21 = getNv21Input(w, h);
-                op = (halide) -> NativeBridge.nv21ResizeRgbAreaOptimized(nv21, w, h, targetW, targetH, halide);
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
-                break;
-            }
-            case "NV21 Resize RGB Bicubic Optimized": {
-                byte[] nv21 = getNv21Input(w, h);
-                op = (halide) -> NativeBridge.nv21ResizeRgbBicubicOptimized(nv21, w, h, targetW, targetH, halide);
-                or.outputWidth = targetW;
-                or.outputHeight = targetH;
+            case "Seg Argmax (8 classes)": {
+                op = (halide) -> NativeBridge.segArgmax(w, h, 8, halide);
                 break;
             }
             default: {

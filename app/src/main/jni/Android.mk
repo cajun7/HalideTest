@@ -74,6 +74,9 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/rgb_bgr_optimized.a \
     $(HALIDE_GEN_DIR)/resize_bilinear_optimized.a \
     $(HALIDE_GEN_DIR)/resize_area_optimized.a \
+    $(HALIDE_GEN_DIR)/resize_area_2x.a \
+    $(HALIDE_GEN_DIR)/resize_area_3x.a \
+    $(HALIDE_GEN_DIR)/resize_area_4x.a \
     $(HALIDE_GEN_DIR)/resize_bicubic_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_bilinear_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_area_optimized.a \

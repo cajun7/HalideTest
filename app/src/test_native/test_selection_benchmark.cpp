@@ -305,6 +305,52 @@ TEST(SelectionBenchmark, ResizeArea) {
     printf("  PSNR opt  vs CV:    %.1f dB (max_diff=%d)\n", p_opt_vs_cv.psnr, p_opt_vs_cv.max_diff);
 }
 
+TEST(SelectionBenchmark, ResizeArea_3x) {
+    int w = 1920, h = 1080;
+    int tw = 640, th = 360;
+    printf("\n=== Resize INTER_AREA 3x  (%dx%d -> %dx%d, 20 iters) ===\n", w, h, tw, th);
+
+    cv::Mat rgb_cv = make_test_image_rgb(w, h);
+    auto halide_in = mat_to_halide_interleaved(rgb_cv);
+
+    Halide::Runtime::Buffer<uint8_t> out_opt =
+        Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
+
+    auto t_opt  = bench([&]() { halide_ops::resize_area_optimized(halide_in, tw, th, out_opt); });
+    cv::Mat cv_out;
+    auto t_cv   = bench([&]() { cv::resize(rgb_cv, cv_out, cv::Size(tw, th), 0, 0, cv::INTER_AREA); });
+
+    auto p_opt_vs_cv = compute_psnr_rgb(out_opt, cv_out, /*bgr=*/false);
+
+    printf("  %-40s median=%8.0f us  mean=%8.0f us\n", "Halide optimized (3x fast path)", t_opt.median_us, t_opt.mean_us);
+    printf("  %-40s median=%8.0f us  mean=%8.0f us\n", "OpenCV INTER_AREA", t_cv.median_us, t_cv.mean_us);
+    printf("  Speedup (Halide/OpenCV): %.2fx\n", t_cv.median_us / t_opt.median_us);
+    printf("  PSNR opt vs CV:    %.1f dB (max_diff=%d)\n", p_opt_vs_cv.psnr, p_opt_vs_cv.max_diff);
+}
+
+TEST(SelectionBenchmark, ResizeArea_NonInteger) {
+    int w = 1920, h = 1080;
+    int tw = 800, th = 600;
+    printf("\n=== Resize INTER_AREA non-integer  (%dx%d -> %dx%d, 20 iters) ===\n", w, h, tw, th);
+
+    cv::Mat rgb_cv = make_test_image_rgb(w, h);
+    auto halide_in = mat_to_halide_interleaved(rgb_cv);
+
+    Halide::Runtime::Buffer<uint8_t> out_opt =
+        Halide::Runtime::Buffer<uint8_t>::make_interleaved(tw, th, 3);
+
+    auto t_opt  = bench([&]() { halide_ops::resize_area_optimized(halide_in, tw, th, out_opt); });
+    cv::Mat cv_out;
+    auto t_cv   = bench([&]() { cv::resize(rgb_cv, cv_out, cv::Size(tw, th), 0, 0, cv::INTER_AREA); });
+
+    auto p_opt_vs_cv = compute_psnr_rgb(out_opt, cv_out, /*bgr=*/false);
+
+    printf("  %-40s median=%8.0f us  mean=%8.0f us\n", "Halide optimized (generic path)", t_opt.median_us, t_opt.mean_us);
+    printf("  %-40s median=%8.0f us  mean=%8.0f us\n", "OpenCV INTER_AREA", t_cv.median_us, t_cv.mean_us);
+    printf("  Speedup (Halide/OpenCV): %.2fx\n", t_cv.median_us / t_opt.median_us);
+    printf("  PSNR opt vs CV:    %.1f dB (max_diff=%d)\n", p_opt_vs_cv.psnr, p_opt_vs_cv.max_diff);
+}
+
 // ---------------------------------------------------------------------------
 // Odd resolution correctness (no crash + valid output)
 // ---------------------------------------------------------------------------
