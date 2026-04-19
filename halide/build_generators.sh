@@ -104,6 +104,8 @@ MULTI_TARGET_RUNS=(
     "nv21_pipeline_generator -g nv21_pipeline_area -f nv21_pipeline_area_270cw rotation_code=3"
     # Full-range BT.601 NV21 to RGB (Samsung/Android Camera)
     "nv21_to_rgb_full_range_generator -g nv21_to_rgb_full_range -f nv21_to_rgb_full_range"
+    # Full-range BT.709 NV21 to RGB (Samsung Camera2 HD+ default on modern Exynos/SDM)
+    "nv21_to_rgb_bt709_full_range_generator -g nv21_to_rgb_bt709_full_range -f nv21_to_rgb_bt709_full_range"
     # NV21 -> YUV444 (bilinear UV upsample) -> RGB
     "nv21_yuv444_rgb_generator -g nv21_yuv444_rgb -f nv21_yuv444_rgb"
     # Fused NV21 -> Resize -> RGB -> Pad -> Rotate (4 rotation variants)
@@ -126,12 +128,19 @@ MULTI_TARGET_RUNS=(
     "nv21_resize_optimized_generator -g nv21_resize_bilinear_optimized -f nv21_resize_bilinear_optimized"
     "nv21_resize_optimized_generator -g nv21_resize_area_optimized -f nv21_resize_area_optimized"
     "nv21_resize_optimized_generator -g nv21_resize_bicubic_optimized -f nv21_resize_bicubic_optimized"
+    "nv21_resize_optimized_generator -g nv21_resize_nearest_optimized -f nv21_resize_nearest_optimized"
     # nv21_to_rgb_optimized and rgb_to_nv21_optimized removed:
     # baseline versions are faster on device (benchmark data: 624 vs 697 us, 1998 vs 2107 us)
     # Fused NV21 resize -> RGB optimized
     "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_bilinear_optimized -f nv21_resize_rgb_bilinear_optimized"
     "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_area_optimized -f nv21_resize_rgb_area_optimized"
     "nv21_resize_rgb_optimized_generator -g nv21_resize_rgb_bicubic_optimized -f nv21_resize_rgb_bicubic_optimized"
+    # Fused NV21 resize -> BT.709 full-range RGB (Samsung Camera2 HD+ default).
+    # Schedule hard-coded to the sweep winner ("narrow-parallel"); see
+    # docs/schedule_experiments.md for the data behind that choice.
+    "nv21_resize_rgb_bt709_generator -g nv21_resize_rgb_bt709_nearest  -f nv21_resize_rgb_bt709_nearest"
+    "nv21_resize_rgb_bt709_generator -g nv21_resize_rgb_bt709_bilinear -f nv21_resize_rgb_bt709_bilinear"
+    "nv21_resize_rgb_bt709_generator -g nv21_resize_rgb_bt709_area     -f nv21_resize_rgb_bt709_area"
     # --- Segmentation-guided pipelines ---
     # Portrait mode: seg-guided selective disc blur with alpha blending
     "seg_portrait_blur_generator -g seg_portrait_blur -f seg_portrait_blur"
@@ -146,10 +155,15 @@ MULTI_TARGET_RUNS=(
 # Generators with no arithmetic benefit (pure index/channel remapping)
 SINGLE_TARGET_RUNS=(
     # rgb_bgr_convert removed: replaced by rgb_bgr_optimized (1.05x faster, identical output)
-    # Fixed rotations — all 3 variants (90CW, 180, 270CW)
-    "rotate_generator -g rotate_fixed -f rotate_fixed_90cw rotation_code=1"
-    "rotate_generator -g rotate_fixed -f rotate_fixed_180 rotation_code=2"
+    # Fixed rotations — all 3 angles (90CW, 180, 270CW). Schedule hard-coded
+    # to the sweep winner; see docs/schedule_experiments.md.
+    "rotate_generator -g rotate_fixed -f rotate_fixed_90cw  rotation_code=1"
+    "rotate_generator -g rotate_fixed -f rotate_fixed_180   rotation_code=2"
     "rotate_generator -g rotate_fixed -f rotate_fixed_270cw rotation_code=3"
+    # Fixed rotations, 1-channel planar (masks / alpha / depth maps)
+    "rotate_generator -g rotate_fixed_1c -f rotate_fixed_1c_90cw  rotation_code=1"
+    "rotate_generator -g rotate_fixed_1c -f rotate_fixed_1c_180   rotation_code=2"
+    "rotate_generator -g rotate_fixed_1c -f rotate_fixed_1c_270cw rotation_code=3"
     # Flip — horizontal and vertical
     "flip_generator -g flip_fixed -f flip_horizontal flip_code=0"
     "flip_generator -g flip_fixed -f flip_vertical flip_code=1"

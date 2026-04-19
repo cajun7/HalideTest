@@ -147,6 +147,10 @@ public:
 
         y_plane.dim(0).set_stride(1);
         uv_plane.dim(0).set_stride(1);
+
+        // Output is 3-channel interleaved RGB (stride: x=3, c=1).
+        output.dim(0).set_stride(3);
+        output.dim(2).set_stride(1);
     }
 };
 

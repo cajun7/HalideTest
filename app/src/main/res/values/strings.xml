@@ -21,11 +21,14 @@
         <item>NV21 Resize+Pad+Rotate (384)</item>      <!-- 15 -->
         <item>NV21 Resize (stay NV21)</item>           <!-- 16 -->
         <item>NV21 Resize+RGB (fused)</item>           <!-- 17 -->
-        <item>Seg Argmax (8 classes)</item>             <!-- 18 -->
-        <item>Seg Portrait Blur (r=8)</item>           <!-- 19 -->
-        <item>Seg Background Replace</item>            <!-- 20 -->
-        <item>Seg Color Style</item>                   <!-- 21 -->
-        <item>Seg Depth Blur (3 zones)</item>          <!-- 22 -->
+        <item>NV21 Resize+RGB BT.709 Nearest (fused)</item>   <!-- 18 -->
+        <item>NV21 Resize+RGB BT.709 Bilinear (fused)</item>  <!-- 19 -->
+        <item>NV21 Resize+RGB BT.709 Area (fused)</item>      <!-- 20 -->
+        <item>Seg Argmax (8 classes)</item>             <!-- 21 -->
+        <item>Seg Portrait Blur (r=8)</item>           <!-- 22 -->
+        <item>Seg Background Replace</item>            <!-- 23 -->
+        <item>Seg Color Style</item>                   <!-- 24 -->
+        <item>Seg Depth Blur (3 zones)</item>          <!-- 25 -->
     </string-array>
 
     <string-array name="resolutions">

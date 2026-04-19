@@ -388,6 +388,12 @@ int resize_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& input,
 // Resizes Y plane at full resolution and UV plane at half resolution
 // independently, avoiding the NV21->RGB->resize roundtrip.
 
+int nv21_resize_nearest_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                  int target_w, int target_h,
+                                  Halide::Runtime::Buffer<uint8_t>& y_output,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_output);
+
 int nv21_resize_bilinear_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                    Halide::Runtime::Buffer<uint8_t>& uv_plane,
                                    int target_w, int target_h,
@@ -423,6 +429,25 @@ int nv21_resize_rgb_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                       Halide::Runtime::Buffer<uint8_t>& uv_plane,
                                       int target_w, int target_h,
                                       Halide::Runtime::Buffer<uint8_t>& output);
+
+// --- Fused NV21 Resize -> RGB (BT.709 full-range) ---
+// Matches Samsung Camera2 HD+ colorspace. Coefficients 403/-48/-120/475 @ Q8
+// agree with bt709::nv21_to_rgb_bt709_full_range_* (bt709_neon_ref.cpp).
+
+int nv21_resize_rgb_bt709_nearest(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                  int target_w, int target_h,
+                                  Halide::Runtime::Buffer<uint8_t>& output);
+
+int nv21_resize_rgb_bt709_bilinear(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                   Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                   int target_w, int target_h,
+                                   Halide::Runtime::Buffer<uint8_t>& output);
+
+int nv21_resize_rgb_bt709_area(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                               Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                               int target_w, int target_h,
+                               Halide::Runtime::Buffer<uint8_t>& output);
 
 // ---------------------------------------------------------------------------
 // Segmentation-Guided Pipelines

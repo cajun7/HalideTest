@@ -106,7 +106,9 @@ public:
         uv_output.vectorize(x, 8, TailStrategy::GuardWithIf)
                  .parallel(y);
 
-        // Inform Halide about input layout (3-channel interleaved)
+        // Inform Halide about input layout (3-channel interleaved: stride x=3, c=1)
+        input.dim(0).set_stride(3);
+        input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);
 
         // UV output: contiguous bytes (stride 1)

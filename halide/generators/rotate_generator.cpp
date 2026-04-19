@@ -47,7 +47,7 @@ public:
     Input<Buffer<uint8_t, 3>> input{"input"};
     Output<Buffer<uint8_t, 3>> output{"output"};
 
-    Var x{"x"}, y{"y"}, c{"c"};
+    Var x{"x"}, y{"y"}, c{"c"}, yi{"yi"};
 
     void generate() {
         Expr w = input.dim(0).extent();  // input width
@@ -79,19 +79,23 @@ public:
             output(x, y, c) = input(w - 1 - y, x, c);
         }
 
-        // Standard interleaved RGB schedule
-        output.reorder(c, x, y)
-              .bound(c, 0, 3)
-              .unroll(c)
-              .vectorize(x, 16, TailStrategy::GuardWithIf)
-              .parallel(y);
-
-        // Interleaved layout constraints
+        // Interleaved layout constraints.
         input.dim(0).set_stride(3);
         input.dim(2).set_stride(1);
         input.dim(2).set_bounds(0, 3);
         output.dim(0).set_stride(3);
         output.dim(2).set_stride(1);
+
+        // Schedule: narrow-parallel v1 from the empirical sweep — split y by
+        // 16 + parallel + vectorize(16) is the majority winner across 90/180/
+        // 270 at prod resolutions on SM8850 / Exynos 2600. See
+        // docs/schedule_experiments.md for the data.
+        output.reorder(c, x, y)
+              .bound(c, 0, 3)
+              .unroll(c)
+              .split(y, y, yi, 16, TailStrategy::GuardWithIf)
+              .parallel(y)
+              .vectorize(x, 16, TailStrategy::GuardWithIf);
     }
 };
 
@@ -174,3 +178,55 @@ public:
 };
 
 HALIDE_REGISTER_GENERATOR(RotateArbitrary, rotate_arbitrary)
+
+// ---------------------------------------------------------------------------
+// Fixed Rotation, 1-channel (90, 180, 270 degrees CW)
+// ---------------------------------------------------------------------------
+//
+// Planar 2-D variant of RotateFixed — used for segmentation masks / alpha /
+// depth-map rotation where inputs are single-channel (no `c` dim). The 3-ch
+// interleaved version above uses stride(x)=3 constraints that would be wrong
+// for planar uint8; this class keeps stride(x)=1 layout.
+// ---------------------------------------------------------------------------
+class RotateFixed1C : public Generator<RotateFixed1C> {
+public:
+    GeneratorParam<int> rotation_code{"rotation_code", 1};   // 1=90CW, 2=180, 3=270CW
+
+    Input<Buffer<uint8_t, 2>> input{"input"};
+    Output<Buffer<uint8_t, 2>> output{"output"};
+
+    Var x{"x"}, y{"y"}, yi{"yi"};
+
+    void generate() {
+        Expr w = input.dim(0).extent();
+        Expr h = input.dim(1).extent();
+
+        int code = rotation_code;
+        if (code == 1) {
+            // 90 CW: output(x, y) = input(y, H-1-x)
+            output(x, y) = input(y, h - 1 - x);
+        } else if (code == 2) {
+            // 180
+            output(x, y) = input(w - 1 - x, h - 1 - y);
+        } else {
+            // 270 CW
+            output(x, y) = input(w - 1 - y, x);
+        }
+
+        // Schedule: 90/270 transpose the source access pattern, so inner-row
+        // iteration along the output reads the input strided-by-input-stride.
+        // Tile y into 16-row bands to keep the working set hot in L1.
+        if (code == 2) {
+            output.vectorize(x, 32, TailStrategy::GuardWithIf).parallel(y);
+        } else {
+            output.split(y, y, yi, 16, TailStrategy::GuardWithIf)
+                  .parallel(y)
+                  .vectorize(x, 32, TailStrategy::GuardWithIf);
+        }
+
+        input.dim(0).set_stride(1);
+        output.dim(0).set_stride(1);
+    }
+};
+
+HALIDE_REGISTER_GENERATOR(RotateFixed1C, rotate_fixed_1c)

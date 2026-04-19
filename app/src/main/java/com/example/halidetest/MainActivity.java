@@ -574,6 +574,27 @@ public class MainActivity extends AppCompatActivity {
                 or.outputHeight = targetH;
                 break;
             }
+            case "NV21 Resize+RGB BT.709 Nearest (fused)": {
+                byte[] nv21 = getNv21Input(w, h);
+                op = (halide) -> NativeBridge.nv21ResizeRgbBt709Nearest(nv21, w, h, targetW, targetH, halide);
+                or.outputWidth = targetW;
+                or.outputHeight = targetH;
+                break;
+            }
+            case "NV21 Resize+RGB BT.709 Bilinear (fused)": {
+                byte[] nv21 = getNv21Input(w, h);
+                op = (halide) -> NativeBridge.nv21ResizeRgbBt709Bilinear(nv21, w, h, targetW, targetH, halide);
+                or.outputWidth = targetW;
+                or.outputHeight = targetH;
+                break;
+            }
+            case "NV21 Resize+RGB BT.709 Area (fused)": {
+                byte[] nv21 = getNv21Input(w, h);
+                op = (halide) -> NativeBridge.nv21ResizeRgbBt709Area(nv21, w, h, targetW, targetH, halide);
+                or.outputWidth = targetW;
+                or.outputHeight = targetH;
+                break;
+            }
             case "Seg Argmax (8 classes)": {
                 op = (halide) -> NativeBridge.segArgmax(w, h, 8, halide);
                 break;

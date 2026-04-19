@@ -29,7 +29,19 @@ LOCAL_SRC_FILES := \
     native_bridge.cpp \
     halide_ops.cpp \
     opencv_ops.cpp \
-    benchmark_engine.cpp
+    benchmark_engine.cpp \
+    bt709_neon_ref.cpp \
+    ops/op_rgb_bgr.cpp \
+    ops/op_gaussian_blur.cpp \
+    ops/op_lens_blur.cpp \
+    ops/op_resize.cpp \
+    ops/op_rotate.cpp \
+    ops/op_flip.cpp \
+    ops/op_nv21_to_rgb.cpp \
+    ops/op_letterbox.cpp \
+    ops/op_nv21_to_rgb_bt709.cpp \
+    ops/op_nv21_resize_rgb_bt709.cpp \
+    ops/op_rotate_1c.cpp
 
 LOCAL_C_INCLUDES += \
     $(HALIDE_INCLUDE) \
@@ -52,6 +64,9 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/rotate_fixed_90cw.a \
     $(HALIDE_GEN_DIR)/rotate_fixed_180.a \
     $(HALIDE_GEN_DIR)/rotate_fixed_270cw.a \
+    $(HALIDE_GEN_DIR)/rotate_fixed_1c_90cw.a \
+    $(HALIDE_GEN_DIR)/rotate_fixed_1c_180.a \
+    $(HALIDE_GEN_DIR)/rotate_fixed_1c_270cw.a \
     $(HALIDE_GEN_DIR)/rotate_arbitrary.a \
     $(HALIDE_GEN_DIR)/flip_horizontal.a \
     $(HALIDE_GEN_DIR)/flip_vertical.a \
@@ -65,6 +80,7 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_pipeline_area_180.a \
     $(HALIDE_GEN_DIR)/nv21_pipeline_area_270cw.a \
     $(HALIDE_GEN_DIR)/nv21_to_rgb_full_range.a \
+    $(HALIDE_GEN_DIR)/nv21_to_rgb_bt709_full_range.a \
     $(HALIDE_GEN_DIR)/nv21_yuv444_rgb.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_none.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_90cw.a \
@@ -81,9 +97,13 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_resize_bilinear_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_area_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_nearest_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_bilinear_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_area_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bt709_nearest.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bt709_bilinear.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bt709_area.a \
     $(HALIDE_GEN_DIR)/seg_portrait_blur.a \
     $(HALIDE_GEN_DIR)/seg_bg_replace.a \
     $(HALIDE_GEN_DIR)/seg_color_style.a \

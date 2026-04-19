@@ -9,6 +9,9 @@
 #include "halide_ops.h"
 #include "opencv_ops.h"
 #include "benchmark_engine.h"
+#include "operation_context.h"
+#include "operation_registry.h"
+#include "bt709_neon_ref.h"
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -86,21 +89,12 @@ Java_com_example_halidetest_NativeBridge_nv21ToRgb(
         // UV plane as 2D raw bytes: width x (height/2)
         Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, w, h / 2);
 
-        // Use planar output (Halide default stride) then copy to RGBA
-        Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+        // Interleaved RGB output — generator now has stride constraints
+        std::vector<uint8_t> rgb_out(w * h * 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
         halide_ops::nv21_to_rgb(y_buf, uv_buf, obuf);
 
-        // Copy planar RGB to RGBA pixel by pixel
-        uint8_t* dst = (uint8_t*)out_lock.pixels;
-        for (int py = 0; py < h; py++) {
-            for (int px = 0; px < w; px++) {
-                int di = (py * w + px) * 4;
-                dst[di + 0] = obuf(px, py, 0);
-                dst[di + 1] = obuf(px, py, 1);
-                dst[di + 2] = obuf(px, py, 2);
-                dst[di + 3] = 255;
-            }
-        }
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
     } else {
         cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, (uint8_t*)nv21_ptr);
         cv::Mat rgb_out;
@@ -278,17 +272,14 @@ Java_com_example_halidetest_NativeBridge_rotate(
             else halide_ops::rotate_270cw(ibuf, obuf);
         } else {
             // rotate_arbitrary uses planar buffers (constant_exterior + interleaved has issues)
-            Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
+            std::vector<uint8_t> planar_in(w * h * 3);
+            interleaved_to_planar(rgb_in.data(), planar_in.data(), w, h);
+            Halide::Runtime::Buffer<uint8_t> ibuf(planar_in.data(), w, h, 3);
+
             Halide::Runtime::Buffer<uint8_t> obuf(ow, oh, 3);
-            for (int py = 0; py < h; py++)
-                for (int px = 0; px < w; px++)
-                    for (int pc = 0; pc < 3; pc++)
-                        ibuf(px, py, pc) = rgb_in[(py * w + px) * 3 + pc];
             halide_ops::rotate_angle(ibuf, angle_rad, obuf);
-            for (int py = 0; py < oh; py++)
-                for (int px = 0; px < ow; px++)
-                    for (int pc = 0; pc < 3; pc++)
-                        rgb_out[(py * ow + px) * 3 + pc] = obuf(px, py, pc);
+
+            planar_to_interleaved(obuf.data(), rgb_out.data(), ow, oh);
         }
 
         rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, ow, oh);
@@ -338,16 +329,8 @@ Java_com_example_halidetest_NativeBridge_rgbToNv21(
         std::vector<uint8_t> rgb_in(w * h * 3);
         rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
 
-        // Copy interleaved RGB to planar buffer for Halide
-        Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
-        for (int py = 0; py < h; py++) {
-            for (int px = 0; px < w; px++) {
-                int si = (py * w + px) * 3;
-                ibuf(px, py, 0) = rgb_in[si + 0];
-                ibuf(px, py, 1) = rgb_in[si + 1];
-                ibuf(px, py, 2) = rgb_in[si + 2];
-            }
-        }
+        // Interleaved RGB input — generator now has stride constraints
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
 
         // Y output: w x h
         Halide::Runtime::Buffer<uint8_t> y_buf((uint8_t*)nv21_ptr, w, h);
@@ -709,19 +692,11 @@ Java_com_example_halidetest_NativeBridge_nv21Yuv444Rgb(
 
         Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, w, h);
         Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, w, h / 2);
-        Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+        std::vector<uint8_t> rgb_out(w * h * 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
         halide_ops::nv21_yuv444_rgb(y_buf, uv_buf, obuf);
 
-        uint8_t* dst = (uint8_t*)out_lock.pixels;
-        for (int py = 0; py < h; py++) {
-            for (int px = 0; px < w; px++) {
-                int di = (py * w + px) * 4;
-                dst[di + 0] = obuf(px, py, 0);
-                dst[di + 1] = obuf(px, py, 1);
-                dst[di + 2] = obuf(px, py, 2);
-                dst[di + 3] = 255;
-            }
-        }
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
     } else {
         cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, (uint8_t*)nv21_ptr);
         cv::Mat rgb_out;
@@ -761,19 +736,11 @@ Java_com_example_halidetest_NativeBridge_nv21ToRgbFullRange(
 
         Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, w, h);
         Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, w, h / 2);
-        Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+        std::vector<uint8_t> rgb_out(w * h * 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
         halide_ops::nv21_to_rgb_full_range(y_buf, uv_buf, obuf);
 
-        uint8_t* dst = (uint8_t*)out_lock.pixels;
-        for (int py = 0; py < h; py++) {
-            for (int px = 0; px < w; px++) {
-                int di = (py * w + px) * 4;
-                dst[di + 0] = obuf(px, py, 0);
-                dst[di + 1] = obuf(px, py, 1);
-                dst[di + 2] = obuf(px, py, 2);
-                dst[di + 3] = 255;
-            }
-        }
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
     } else {
         cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, (uint8_t*)nv21_ptr);
         cv::Mat rgb_out;
@@ -922,19 +889,11 @@ Java_com_example_halidetest_NativeBridge_nv21ToRgbOptimized(
         Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, w, h);
         Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, w, h / 2);
 
-        Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+        std::vector<uint8_t> rgb_out(w * h * 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
         halide_ops::nv21_to_rgb_optimized(y_buf, uv_buf, obuf);
 
-        uint8_t* dst = (uint8_t*)out_lock.pixels;
-        for (int py = 0; py < h; py++) {
-            for (int px = 0; px < w; px++) {
-                int di = (py * w + px) * 4;
-                dst[di + 0] = obuf(px, py, 0);
-                dst[di + 1] = obuf(px, py, 1);
-                dst[di + 2] = obuf(px, py, 2);
-                dst[di + 3] = 255;
-            }
-        }
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
     } else {
         cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, (uint8_t*)nv21_ptr);
         cv::Mat rgb_out;
@@ -971,15 +930,8 @@ Java_com_example_halidetest_NativeBridge_rgbToNv21Optimized(
         std::vector<uint8_t> rgb_in(w * h * 3);
         rgba_to_rgb((uint8_t*)in_lock.pixels, rgb_in.data(), w, h);
 
-        Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
-        for (int py = 0; py < h; py++) {
-            for (int px = 0; px < w; px++) {
-                int si = (py * w + px) * 3;
-                ibuf(px, py, 0) = rgb_in[si + 0];
-                ibuf(px, py, 1) = rgb_in[si + 1];
-                ibuf(px, py, 2) = rgb_in[si + 2];
-            }
-        }
+        // Interleaved RGB input — generator now has stride constraints
+        auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
 
         Halide::Runtime::Buffer<uint8_t> y_buf((uint8_t*)nv21_ptr, w, h);
         uint8_t* uv_ptr = (uint8_t*)nv21_ptr + y_size;
@@ -1331,6 +1283,114 @@ Java_com_example_halidetest_NativeBridge_nv21ResizeRgbBicubicOptimized(
 }
 
 // -----------------------------------------------------------------------
+// Fused NV21 -> Resize -> RGB (BT.709 full-range) — 3 interp variants
+// -----------------------------------------------------------------------
+// Halide path: the fused nv21_resize_rgb_bt709_{interp} generator
+// Baseline  : Halide NV21-domain resize + NEON BT.709 scalar/vector ref
+//             (OpenCV has no BT.709 full-range NV21 op, so this is the
+//              apples-to-apples "no fusion" comparison — matches
+//              bench_main.cpp:272-279).
+
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ResizeRgbBt709Nearest(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight, tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    uint8_t* y_ptr  = (uint8_t*)nv21_ptr;
+    uint8_t* uv_ptr = y_ptr + sw * sh;
+    Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+    Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+    std::vector<uint8_t> rgb_out(tw * th * 3);
+    auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+
+    if (useHalide) {
+        halide_ops::nv21_resize_rgb_bt709_nearest(y_buf, uv_buf, tw, th, obuf);
+    } else {
+        Halide::Runtime::Buffer<uint8_t> y_r(tw, th), uv_r(tw, th / 2);
+        halide_ops::nv21_resize_nearest_optimized(y_buf, uv_buf, tw, th, y_r, uv_r);
+        bt709::nv21_to_rgb_bt709_full_range_neon(
+            y_r.data(),  tw,
+            uv_r.data(), tw,
+            rgb_out.data(), tw * 3, tw, th);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ResizeRgbBt709Bilinear(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight, tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    uint8_t* y_ptr  = (uint8_t*)nv21_ptr;
+    uint8_t* uv_ptr = y_ptr + sw * sh;
+    Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+    Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+    std::vector<uint8_t> rgb_out(tw * th * 3);
+    auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+
+    if (useHalide) {
+        halide_ops::nv21_resize_rgb_bt709_bilinear(y_buf, uv_buf, tw, th, obuf);
+    } else {
+        Halide::Runtime::Buffer<uint8_t> y_r(tw, th), uv_r(tw, th / 2);
+        halide_ops::nv21_resize_bilinear_optimized(y_buf, uv_buf, tw, th, y_r, uv_r);
+        bt709::nv21_to_rgb_bt709_full_range_neon(
+            y_r.data(),  tw,
+            uv_r.data(), tw,
+            rgb_out.data(), tw * 3, tw, th);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ResizeRgbBt709Area(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint srcWidth, jint srcHeight,
+    jint targetWidth, jint targetHeight, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    int sw = srcWidth, sh = srcHeight, tw = targetWidth, th = targetHeight;
+
+    auto start = Clock::now();
+
+    uint8_t* y_ptr  = (uint8_t*)nv21_ptr;
+    uint8_t* uv_ptr = y_ptr + sw * sh;
+    Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, sw, sh);
+    Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, sw, sh / 2);
+    std::vector<uint8_t> rgb_out(tw * th * 3);
+    auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+
+    if (useHalide) {
+        halide_ops::nv21_resize_rgb_bt709_area(y_buf, uv_buf, tw, th, obuf);
+    } else {
+        Halide::Runtime::Buffer<uint8_t> y_r(tw, th), uv_r(tw, th / 2);
+        halide_ops::nv21_resize_area_optimized(y_buf, uv_buf, tw, th, y_r, uv_r);
+        bt709::nv21_to_rgb_bt709_full_range_neon(
+            y_r.data(),  tw,
+            uv_r.data(), tw,
+            rgb_out.data(), tw * 3, tw, th);
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
 // Segmentation-Guided Pipelines
 // -----------------------------------------------------------------------
 
@@ -1579,7 +1639,8 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             if (useHalide) {
                 Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
                 Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
-                Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+                std::vector<uint8_t> rgb_out(w * h * 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
                 halide_ops::nv21_to_rgb_optimized(y_buf, uv_buf, obuf);
             } else {
                 cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
@@ -1592,11 +1653,7 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             std::vector<uint8_t> rgb_in(w * h * 3);
             fill_test_rgb(rgb_in.data(), w, h);
             if (useHalide) {
-                Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
-                for (int py = 0; py < h; py++)
-                    for (int px = 0; px < w; px++)
-                        for (int pc = 0; pc < 3; pc++)
-                            ibuf(px, py, pc) = rgb_in[(py * w + px) * 3 + pc];
+                auto ibuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_in.data(), w, h, 3);
                 Halide::Runtime::Buffer<uint8_t> y_buf(w, h);
                 Halide::Runtime::Buffer<uint8_t> uv_buf(w, h / 2);
                 halide_ops::rgb_to_nv21_optimized(ibuf, y_buf, uv_buf);
@@ -1614,7 +1671,8 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             if (useHalide) {
                 Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
                 Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
-                Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+                std::vector<uint8_t> rgb_out(w * h * 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
                 halide_ops::nv21_yuv444_rgb(y_buf, uv_buf, obuf);
             } else {
                 cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
@@ -1630,7 +1688,8 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             if (useHalide) {
                 Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
                 Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
-                Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
+                std::vector<uint8_t> rgb_out(w * h * 3);
+                auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), w, h, 3);
                 halide_ops::nv21_to_rgb_full_range(y_buf, uv_buf, obuf);
             } else {
                 cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, nv21.data());
@@ -1742,12 +1801,10 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             fill_test_rgb(rgb_in.data(), w, h);
             if (useHalide) {
                 float angle_rad = 45.0f * 3.14159265358979f / 180.0f;
-                Halide::Runtime::Buffer<uint8_t> ibuf(w, h, 3);
+                std::vector<uint8_t> planar_in(w * h * 3);
+                interleaved_to_planar(rgb_in.data(), planar_in.data(), w, h);
+                Halide::Runtime::Buffer<uint8_t> ibuf(planar_in.data(), w, h, 3);
                 Halide::Runtime::Buffer<uint8_t> obuf(w, h, 3);
-                for (int py = 0; py < h; py++)
-                    for (int px = 0; px < w; px++)
-                        for (int pc = 0; pc < 3; pc++)
-                            ibuf(px, py, pc) = rgb_in[(py * w + px) * 3 + pc];
                 halide_ops::rotate_angle(ibuf, angle_rad, obuf);
             } else {
                 cv::Mat in_bgr(h, w, CV_8UC3, rgb_in.data());
@@ -1839,7 +1896,38 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             }
             break;
         }
-        case 18: { // Seg Argmax (8 classes)
+        case 18:   // NV21 Resize+RGB BT.709 Nearest  (fused)
+        case 19:   // NV21 Resize+RGB BT.709 Bilinear (fused)
+        case 20: { // NV21 Resize+RGB BT.709 Area     (fused)
+            int nv21_size = w * h + w * (h / 2);
+            std::vector<uint8_t> nv21(nv21_size);
+            fill_test_nv21(nv21.data(), w, h);
+            Halide::Runtime::Buffer<uint8_t> y_buf(nv21.data(), w, h);
+            Halide::Runtime::Buffer<uint8_t> uv_buf(nv21.data() + w * h, w, h / 2);
+            std::vector<uint8_t> rgb_out(tw * th * 3);
+            auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(rgb_out.data(), tw, th, 3);
+
+            if (useHalide) {
+                switch (opId) {
+                    case 18: halide_ops::nv21_resize_rgb_bt709_nearest (y_buf, uv_buf, tw, th, obuf); break;
+                    case 19: halide_ops::nv21_resize_rgb_bt709_bilinear(y_buf, uv_buf, tw, th, obuf); break;
+                    case 20: halide_ops::nv21_resize_rgb_bt709_area    (y_buf, uv_buf, tw, th, obuf); break;
+                }
+            } else {
+                Halide::Runtime::Buffer<uint8_t> y_r(tw, th), uv_r(tw, th / 2);
+                switch (opId) {
+                    case 18: halide_ops::nv21_resize_nearest_optimized (y_buf, uv_buf, tw, th, y_r, uv_r); break;
+                    case 19: halide_ops::nv21_resize_bilinear_optimized(y_buf, uv_buf, tw, th, y_r, uv_r); break;
+                    case 20: halide_ops::nv21_resize_area_optimized    (y_buf, uv_buf, tw, th, y_r, uv_r); break;
+                }
+                bt709::nv21_to_rgb_bt709_full_range_neon(
+                    y_r.data(),  tw,
+                    uv_r.data(), tw,
+                    rgb_out.data(), tw * 3, tw, th);
+            }
+            break;
+        }
+        case 21: { // Seg Argmax (8 classes)
             int nc = 8;
             int total = w * h * nc;
             std::vector<float> input_data(total);
@@ -1849,13 +1937,15 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
                 Halide::Runtime::Buffer<uint8_t> obuf(w, h);
                 halide_ops::seg_argmax(ibuf, obuf);
             } else {
-                cv::Mat input_mat(h, w, CV_32FC(nc), input_data.data());
+                // seg_argmax reads raw data as planar: data[c*h*w + y*w + x]
+                // Use CV_32FC1 to match the planar layout, not CV_32FC(nc)
+                cv::Mat input_mat(h, w, CV_32FC1, input_data.data());
                 cv::Mat output_mat;
                 opencv_ops::seg_argmax(input_mat, output_mat, nc);
             }
             break;
         }
-        case 19: { // Seg Portrait Blur (r=8)
+        case 22: { // Seg Portrait Blur (r=8)
             std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
             fill_test_rgb(rgb_in.data(), w, h);
             int mw = 256, mh = 256;
@@ -1877,7 +1967,7 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             }
             break;
         }
-        case 20: { // Seg Background Replace
+        case 23: { // Seg Background Replace
             std::vector<uint8_t> fg_rgb(w * h * 3), bg_rgb(w * h * 3), out_rgb(w * h * 3);
             fill_test_rgb(fg_rgb.data(), w, h);
             fill_test_rgb(bg_rgb.data(), w, h); // same size bg for simplicity
@@ -1901,7 +1991,7 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             }
             break;
         }
-        case 21: { // Seg Color Style
+        case 24: { // Seg Color Style
             std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
             fill_test_rgb(rgb_in.data(), w, h);
             int mw = 256, mh = 256;
@@ -1933,7 +2023,7 @@ Java_com_example_halidetest_NativeBridge_nativeBenchmark(
             }
             break;
         }
-        case 22: { // Seg Depth Blur
+        case 25: { // Seg Depth Blur
             std::vector<uint8_t> rgb_in(w * h * 3), rgb_out(w * h * 3);
             fill_test_rgb(rgb_in.data(), w, h);
             int dw = 256, dh = 256;
@@ -2058,6 +2148,68 @@ Java_com_example_halidetest_NativeBridge_appendCsv(
 
     env->ReleaseStringUTFChars(filePath, path);
     env->ReleaseStringUTFChars(csvLine, line);
+}
+
+// -----------------------------------------------------------------------
+// Generic Operation Dispatcher (OCP-compliant)
+// -----------------------------------------------------------------------
+// Dispatches to any registered IOperation by name.
+// New operations can be added by creating a single ops/op_*.cpp file
+// with self-registration — no modification of this file required.
+
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_runOperation(
+    JNIEnv* env, jclass, jstring opName,
+    jobject inputBitmap, jobject outputBitmap,
+    jint targetWidth, jint targetHeight,
+    jboolean useHalide)
+{
+    const char* name = env->GetStringUTFChars(opName, nullptr);
+    IOperation* op = OperationRegistry::instance().find(name);
+    env->ReleaseStringUTFChars(opName, name);
+
+    if (!op) return -1;
+
+    BitmapLock in_lock(env, inputBitmap);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!in_lock.is_valid() || !out_lock.is_valid()) return -1;
+
+    int out_w = targetWidth > 0 ? targetWidth : in_lock.width();
+    int out_h = targetHeight > 0 ? targetHeight : in_lock.height();
+
+    OperationContext ctx;
+    BufferLayout layout = op->halide_layout();
+    ctx.prepare_rgb_resize(in_lock, out_lock, out_w, out_h, layout);
+
+    long time_us;
+    if (useHalide) {
+        time_us = op->run_halide(ctx);
+        ctx.write_back(out_lock, layout);
+    } else {
+        time_us = op->run_opencv(ctx);
+        // OpenCV result is in ctx.cv_out (RGB); write back to RGBA
+        ctx.write_back(out_lock);
+    }
+
+    return time_us;
+}
+
+// Query how many operations are registered
+JNIEXPORT jint JNICALL
+Java_com_example_halidetest_NativeBridge_getRegisteredOpCount(
+    JNIEnv* env, jclass)
+{
+    return (jint)OperationRegistry::instance().size();
+}
+
+// Get registered operation name by index
+JNIEXPORT jstring JNICALL
+Java_com_example_halidetest_NativeBridge_getRegisteredOpName(
+    JNIEnv* env, jclass, jint index)
+{
+    const auto& ops = OperationRegistry::instance().all();
+    if (index < 0 || index >= (jint)ops.size()) return nullptr;
+    return env->NewStringUTF(ops[index]->name());
 }
 
 } // extern "C"

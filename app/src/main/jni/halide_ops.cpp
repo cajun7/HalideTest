@@ -72,12 +72,16 @@
 #include "resize_area_3x.h"
 #include "resize_area_4x.h"
 #include "resize_bicubic_optimized.h"
+#include "nv21_resize_nearest_optimized.h"
 #include "nv21_resize_bilinear_optimized.h"
 #include "nv21_resize_area_optimized.h"
 #include "nv21_resize_bicubic_optimized.h"
 #include "nv21_resize_rgb_bilinear_optimized.h"
 #include "nv21_resize_rgb_area_optimized.h"
 #include "nv21_resize_rgb_bicubic_optimized.h"
+#include "nv21_resize_rgb_bt709_nearest.h"
+#include "nv21_resize_rgb_bt709_bilinear.h"
+#include "nv21_resize_rgb_bt709_area.h"
 // Segmentation-guided pipelines
 #include "seg_portrait_blur.h"
 #include "seg_bg_replace.h"
@@ -450,6 +454,14 @@ int resize_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& input,
     return ::resize_bicubic_optimized(input, target_w, target_h, output);
 }
 
+int nv21_resize_nearest_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                  int target_w, int target_h,
+                                  Halide::Runtime::Buffer<uint8_t>& y_output,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_output) {
+    return ::nv21_resize_nearest_optimized(y_plane, uv_plane, target_w, target_h, y_output, uv_output);
+}
+
 int nv21_resize_bilinear_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                    Halide::Runtime::Buffer<uint8_t>& uv_plane,
                                    int target_w, int target_h,
@@ -493,6 +505,27 @@ int nv21_resize_rgb_bicubic_optimized(Halide::Runtime::Buffer<uint8_t>& y_plane,
                                       int target_w, int target_h,
                                       Halide::Runtime::Buffer<uint8_t>& output) {
     return ::nv21_resize_rgb_bicubic_optimized(y_plane, uv_plane, target_w, target_h, output);
+}
+
+int nv21_resize_rgb_bt709_nearest(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                  Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                  int target_w, int target_h,
+                                  Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_resize_rgb_bt709_nearest(y_plane, uv_plane, target_w, target_h, output);
+}
+
+int nv21_resize_rgb_bt709_bilinear(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                                   Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                                   int target_w, int target_h,
+                                   Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_resize_rgb_bt709_bilinear(y_plane, uv_plane, target_w, target_h, output);
+}
+
+int nv21_resize_rgb_bt709_area(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                               Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                               int target_w, int target_h,
+                               Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_resize_rgb_bt709_area(y_plane, uv_plane, target_w, target_h, output);
 }
 
 // ---------------------------------------------------------------------------

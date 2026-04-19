@@ -257,6 +257,30 @@ public class NativeBridge {
                                                              int targetWidth, int targetHeight,
                                                              boolean useHalide);
 
+    /**
+     * Fused NV21 -> nearest resize -> RGB (BT.709 full-range, Samsung Camera2 HD+).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizeRgbBt709Nearest(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                         int targetWidth, int targetHeight,
+                                                         boolean useHalide);
+
+    /**
+     * Fused NV21 -> bilinear resize -> RGB (BT.709 full-range).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizeRgbBt709Bilinear(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                          int targetWidth, int targetHeight,
+                                                          boolean useHalide);
+
+    /**
+     * Fused NV21 -> area resize -> RGB (BT.709 full-range).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ResizeRgbBt709Area(byte[] nv21Data, int srcWidth, int srcHeight,
+                                                      int targetWidth, int targetHeight,
+                                                      boolean useHalide);
+
     // ---- Segmentation-guided pipelines ----
 
     /**

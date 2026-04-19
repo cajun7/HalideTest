@@ -7,6 +7,13 @@
 #include <opencv2/core.hpp>
 #include <chrono>
 
+#if defined(__aarch64__) || defined(__ARM_NEON)
+#include <arm_neon.h>
+#define HAS_NEON 1
+#else
+#define HAS_NEON 0
+#endif
+
 #define LOG_TAG "HalideBenchmark"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -68,21 +75,100 @@ struct BitmapLock {
     }
 };
 
-// Extract contiguous RGB from RGBA bitmap (copies data)
+// Extract contiguous RGB from RGBA bitmap.
+// NEON path: 16 pixels/iteration using vld4q_u8 (deinterleave 4ch) + vst3q_u8 (interleave 3ch).
 inline void rgba_to_rgb(const uint8_t* rgba, uint8_t* rgb, int width, int height) {
-    for (int i = 0; i < width * height; i++) {
+    int total = width * height;
+    int i = 0;
+#if HAS_NEON
+    // Process 16 RGBA pixels -> 16 RGB pixels per iteration
+    for (; i + 16 <= total; i += 16) {
+        uint8x16x4_t src = vld4q_u8(rgba + i * 4);  // deinterleave R,G,B,A
+        uint8x16x3_t dst;
+        dst.val[0] = src.val[0];  // R
+        dst.val[1] = src.val[1];  // G
+        dst.val[2] = src.val[2];  // B (discard A)
+        vst3q_u8(rgb + i * 3, dst);  // interleave R,G,B
+    }
+#endif
+    // Scalar tail
+    for (; i < total; i++) {
         rgb[i * 3 + 0] = rgba[i * 4 + 0];
         rgb[i * 3 + 1] = rgba[i * 4 + 1];
         rgb[i * 3 + 2] = rgba[i * 4 + 2];
     }
 }
 
-// Write contiguous RGB back into RGBA bitmap (copies data, sets alpha=255)
+// Write contiguous RGB back into RGBA bitmap (sets alpha=255).
+// NEON path: 16 pixels/iteration using vld3q_u8 + vst4q_u8.
 inline void rgb_to_rgba(const uint8_t* rgb, uint8_t* rgba, int width, int height) {
-    for (int i = 0; i < width * height; i++) {
+    int total = width * height;
+    int i = 0;
+#if HAS_NEON
+    uint8x16_t alpha = vdupq_n_u8(255);
+    for (; i + 16 <= total; i += 16) {
+        uint8x16x3_t src = vld3q_u8(rgb + i * 3);  // deinterleave R,G,B
+        uint8x16x4_t dst;
+        dst.val[0] = src.val[0];  // R
+        dst.val[1] = src.val[1];  // G
+        dst.val[2] = src.val[2];  // B
+        dst.val[3] = alpha;       // A = 255
+        vst4q_u8(rgba + i * 4, dst);  // interleave R,G,B,A
+    }
+#endif
+    // Scalar tail
+    for (; i < total; i++) {
         rgba[i * 4 + 0] = rgb[i * 3 + 0];
         rgba[i * 4 + 1] = rgb[i * 3 + 1];
         rgba[i * 4 + 2] = rgb[i * 3 + 2];
         rgba[i * 4 + 3] = 255;
+    }
+}
+
+// NEON-optimized interleaved RGB -> planar RGB conversion.
+// Used by operations that require planar layout (e.g., rotate_arbitrary).
+inline void interleaved_to_planar(const uint8_t* interleaved, uint8_t* planar,
+                                  int width, int height) {
+    int total = width * height;
+    uint8_t* p0 = planar;                    // R plane
+    uint8_t* p1 = planar + total;            // G plane
+    uint8_t* p2 = planar + total * 2;        // B plane
+    int i = 0;
+#if HAS_NEON
+    for (; i + 16 <= total; i += 16) {
+        uint8x16x3_t src = vld3q_u8(interleaved + i * 3);
+        vst1q_u8(p0 + i, src.val[0]);
+        vst1q_u8(p1 + i, src.val[1]);
+        vst1q_u8(p2 + i, src.val[2]);
+    }
+#endif
+    for (; i < total; i++) {
+        p0[i] = interleaved[i * 3 + 0];
+        p1[i] = interleaved[i * 3 + 1];
+        p2[i] = interleaved[i * 3 + 2];
+    }
+}
+
+// NEON-optimized planar RGB -> interleaved RGB conversion.
+inline void planar_to_interleaved(const uint8_t* planar, uint8_t* interleaved,
+                                  int width, int height) {
+    int total = width * height;
+    const uint8_t* p0 = planar;
+    const uint8_t* p1 = planar + total;
+    const uint8_t* p2 = planar + total * 2;
+    int i = 0;
+#if HAS_NEON
+    for (; i + 16 <= total; i += 16) {
+        uint8x16x3_t dst;
+        dst.val[0] = vld1q_u8(p0 + i);
+        dst.val[1] = vld1q_u8(p1 + i);
+        dst.val[2] = vld1q_u8(p2 + i);
+        vst3q_u8(interleaved + i * 3, dst);
+    }
+#endif
+    for (; i < total; i++) {
+        interleaved[i * 3 + 0] = p0[i];
+        interleaved[i * 3 + 1] = p1[i];
+        interleaved[i * 3 + 2] = p2[i];
     }
 }

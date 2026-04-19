@@ -122,6 +122,12 @@ public:
         // Each row is contiguous in memory.
         y_plane.dim(0).set_stride(1);
         uv_plane.dim(0).set_stride(1);
+
+        // Output is 3-channel interleaved RGB (stride: x=3, c=1).
+        // This matches make_interleaved() layout, enabling zero-copy
+        // from the Halide output buffer to downstream consumers.
+        output.dim(0).set_stride(3);
+        output.dim(2).set_stride(1);
     }
 };
 

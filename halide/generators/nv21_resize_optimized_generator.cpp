@@ -527,3 +527,90 @@ public:
 };
 
 HALIDE_REGISTER_GENERATOR(Nv21ResizeBicubicOptimized, nv21_resize_bicubic_optimized)
+
+// ---------------------------------------------------------------------------
+// NV21 Nearest-Neighbor Resize Optimized (OpenCV INTER_NEAREST convention)
+// ---------------------------------------------------------------------------
+//
+// OpenCV's cv::INTER_NEAREST uses NO pixel-center alignment:
+//   sx = (int)floor(dst_x * src_w / dst_w)
+// (Unlike INTER_LINEAR/INTER_AREA which use (dst_x + 0.5) * scale - 0.5.)
+// We match OpenCV exactly here so the test oracle is cv::resize(_, INTER_NEAREST).
+//
+// This op is pure index remapping — no arithmetic, pure cache-bandwidth-bound.
+// Use wide vectors (x=16 for Y, x=8 for UV) and large parallel tiles.
+// ---------------------------------------------------------------------------
+class Nv21ResizeNearestOptimized : public Generator<Nv21ResizeNearestOptimized> {
+public:
+    Input<Buffer<uint8_t, 2>> y_plane{"y_plane"};
+    Input<Buffer<uint8_t, 2>> uv_plane{"uv_plane"};
+    Input<int32_t> target_w{"target_w"};
+    Input<int32_t> target_h{"target_h"};
+
+    Output<Buffer<uint8_t, 2>> y_output{"y_output"};
+    Output<Buffer<uint8_t, 2>> uv_output{"uv_output"};
+
+    Var x{"x"}, y{"y"}, yi{"yi"};
+
+    void generate() {
+        Expr src_w = y_plane.dim(0).extent();
+        Expr src_h = y_plane.dim(1).extent();
+
+        // ===================== Y PLANE =====================
+        // OpenCV rule: sx = floor(dst_x * src_w / dst_w), no +0.5 offset.
+        // Integer divide with floor: use float math since src_w, target_w
+        // are int32 and their ratio at src_w=1920, dst_w=3840 fits in float
+        // without precision loss for any expected resolution.
+        Expr y_src_xf = cast<float>(x) * cast<float>(src_w) / cast<float>(target_w);
+        Expr y_src_yf = cast<float>(y) * cast<float>(src_h) / cast<float>(target_h);
+        Expr y_ix = cast<int32_t>(floor(y_src_xf));
+        Expr y_iy = cast<int32_t>(floor(y_src_yf));
+        // Safety clamp: floor can land on src_w if float rounds up at x=dst_w-1.
+        Expr y_ix_c = clamp(y_ix, 0, src_w - 1);
+        Expr y_iy_c = clamp(y_iy, 0, src_h - 1);
+
+        y_output(x, y) = y_plane(y_ix_c, y_iy_c);
+
+        // ===================== UV PLANE =====================
+        // UV is resized at chroma resolution. Each UV pixel (V or U byte) is
+        // sampled from the nearest UV pixel in src. V stays at even bytes, U
+        // at odd bytes — so we route both channels through the same nearest
+        // selection, just shifting the byte offset by `is_v ? 0 : 1`.
+        Expr uv_src_w_half = src_w / 2;
+        Expr uv_src_h_half = uv_plane.dim(1).extent();
+        Expr uv_dst_w_half = target_w / 2;
+        Expr uv_dst_h_half = target_h / 2;
+
+        Expr uv_px = x / 2;                   // which chroma pixel (0..uv_dst_w_half-1)
+        Expr is_v = (x % 2) == 0;             // V at even bytes in NV21
+
+        Expr uv_src_pxf = cast<float>(uv_px) * cast<float>(uv_src_w_half) /
+                          cast<float>(uv_dst_w_half);
+        Expr uv_src_rowf = cast<float>(y) * cast<float>(uv_src_h_half) /
+                           cast<float>(uv_dst_h_half);
+        Expr uv_ix = cast<int32_t>(floor(uv_src_pxf));
+        Expr uv_iy = cast<int32_t>(floor(uv_src_rowf));
+        Expr uv_ix_c = clamp(uv_ix, 0, uv_src_w_half - 1);
+        Expr uv_iy_c = clamp(uv_iy, 0, uv_src_h_half - 1);
+
+        // Byte offset inside the src UV row: chroma pixel * 2 + (0 for V / 1 for U)
+        Expr src_byte_x = uv_ix_c * 2 + select(is_v, 0, 1);
+        uv_output(x, y) = uv_plane(src_byte_x, uv_iy_c);
+
+        // --- Schedule ---
+        y_output.split(y, y, yi, 64)
+                .parallel(y)
+                .vectorize(x, 16, TailStrategy::GuardWithIf);
+        Var uv_yi("uv_yi");
+        uv_output.split(y, y, uv_yi, 32)
+                 .parallel(y)
+                 .vectorize(x, 8, TailStrategy::GuardWithIf);
+
+        y_plane.dim(0).set_stride(1);
+        uv_plane.dim(0).set_stride(1);
+        y_output.dim(0).set_stride(1);
+        uv_output.dim(0).set_stride(1);
+    }
+};
+
+HALIDE_REGISTER_GENERATOR(Nv21ResizeNearestOptimized, nv21_resize_nearest_optimized)

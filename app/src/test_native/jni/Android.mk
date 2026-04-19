@@ -32,25 +32,31 @@ LOCAL_SRC_FILES := \
     ../test_resize.cpp \
     ../test_resize_target.cpp \
     ../test_rotate.cpp \
+    ../test_rotate_1c.cpp \
     ../test_flip.cpp \
     ../test_fused_pipeline.cpp \
     ../test_target_dispatch.cpp \
     ../test_nv21_full_range.cpp \
+    ../test_nv21_bt709.cpp \
+    ../../main/jni/bt709_neon_ref.cpp \
     ../test_nv21_yuv444.cpp \
     ../test_nv21_resize_pad_rotate.cpp \
     ../test_seg_argmax.cpp \
     ../test_rgb_resize_optimized.cpp \
     ../test_nv21_resize_optimized.cpp \
+    ../test_nv21_resize_nearest.cpp \
     ../test_nv21_rgb_optimized.cpp \
     ../test_rgb_bgr_optimized.cpp \
     ../test_nv21_resize_rgb_optimized.cpp \
+    ../test_nv21_resize_rgb_bt709.cpp \
     ../test_bench_optimized.cpp \
     ../test_selection_benchmark.cpp \
     ../test_seg_portrait_blur.cpp \
     ../test_seg_bg_replace.cpp \
     ../test_seg_color_style.cpp \
     ../test_seg_depth_blur.cpp \
-    ../../main/jni/halide_ops.cpp
+    ../../main/jni/halide_ops.cpp \
+    ../../main/jni/opencv_ops.cpp
 
 LOCAL_C_INCLUDES += \
     $(HALIDE_INCLUDE) \
@@ -76,6 +82,9 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/rotate_fixed_90cw.a \
     $(HALIDE_GEN_DIR)/rotate_fixed_180.a \
     $(HALIDE_GEN_DIR)/rotate_fixed_270cw.a \
+    $(HALIDE_GEN_DIR)/rotate_fixed_1c_90cw.a \
+    $(HALIDE_GEN_DIR)/rotate_fixed_1c_180.a \
+    $(HALIDE_GEN_DIR)/rotate_fixed_1c_270cw.a \
     $(HALIDE_GEN_DIR)/rotate_arbitrary.a \
     $(HALIDE_GEN_DIR)/flip_horizontal.a \
     $(HALIDE_GEN_DIR)/flip_vertical.a \
@@ -88,6 +97,7 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_pipeline_area_180.a \
     $(HALIDE_GEN_DIR)/nv21_pipeline_area_270cw.a \
     $(HALIDE_GEN_DIR)/nv21_to_rgb_full_range.a \
+    $(HALIDE_GEN_DIR)/nv21_to_rgb_bt709_full_range.a \
     $(HALIDE_GEN_DIR)/nv21_yuv444_rgb.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_none.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_90cw.a \
@@ -104,9 +114,13 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_resize_bilinear_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_area_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_nearest_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_bilinear_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_area_optimized.a \
     $(HALIDE_GEN_DIR)/nv21_resize_rgb_bicubic_optimized.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bt709_nearest.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bt709_bilinear.a \
+    $(HALIDE_GEN_DIR)/nv21_resize_rgb_bt709_area.a \
     $(HALIDE_GEN_DIR)/seg_portrait_blur.a \
     $(HALIDE_GEN_DIR)/seg_bg_replace.a \
     $(HALIDE_GEN_DIR)/seg_color_style.a \
