@@ -88,6 +88,13 @@ int nv21_to_rgb_full_range(Halide::Runtime::Buffer<uint8_t>& y_plane,
                            Halide::Runtime::Buffer<uint8_t>& uv_plane,
                            Halide::Runtime::Buffer<uint8_t>& output);
 
+// Fused NV21 -> YUV444 (nearest UV) -> BT.709 full-range RGB using FLOAT math.
+// Matches TargetOpenCV.cpp (nv21_to_YUV444 + YUV444_to_RGB) to ~94-100 dB PSNR
+// (max_diff <= 1 LSB). Same I/O contract as nv21_to_rgb_bt709_full_range.
+int nv21_to_rgb_bt709_fused(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                            Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                            Halide::Runtime::Buffer<uint8_t>& output);
+
 // ---------------------------------------------------------------------------
 // Blur Operations
 // ---------------------------------------------------------------------------

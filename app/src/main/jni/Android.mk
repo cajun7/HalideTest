@@ -81,6 +81,7 @@ LOCAL_LDFLAGS += \
     $(HALIDE_GEN_DIR)/nv21_pipeline_area_270cw.a \
     $(HALIDE_GEN_DIR)/nv21_to_rgb_full_range.a \
     $(HALIDE_GEN_DIR)/nv21_to_rgb_bt709_full_range.a \
+    $(HALIDE_GEN_DIR)/nv21_to_rgb_bt709_fused.a \
     $(HALIDE_GEN_DIR)/nv21_yuv444_rgb.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_none.a \
     $(HALIDE_GEN_DIR)/nv21_resize_pad_rotate_90cw.a \

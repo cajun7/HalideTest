@@ -756,6 +756,53 @@ Java_com_example_halidetest_NativeBridge_nv21ToRgbFullRange(
 }
 
 // -----------------------------------------------------------------------
+// Fused NV21 -> YUV444 (nearest UV) -> BT.709 full-range RGB (FLOAT)
+// Halide path is the production target; OpenCV branch runs cvtColor BT.601
+// for visual sanity comparison only (true BT.709 reference is in the test).
+// -----------------------------------------------------------------------
+JNIEXPORT jlong JNICALL
+Java_com_example_halidetest_NativeBridge_nv21ToRgbBt709Fused(
+    JNIEnv* env, jclass, jbyteArray nv21Data, jint width, jint height,
+    jobject outputBitmap, jboolean useHalide)
+{
+    jbyte* nv21_ptr = env->GetByteArrayElements(nv21Data, nullptr);
+    BitmapLock out_lock(env, outputBitmap);
+    if (!out_lock.is_valid()) {
+        env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+        return -1;
+    }
+
+    int w = width, h = height;
+
+    auto start = Clock::now();
+
+    if (useHalide) {
+        uint8_t* y_ptr = (uint8_t*)nv21_ptr;
+        uint8_t* uv_ptr = y_ptr + w * h;
+
+        Halide::Runtime::Buffer<uint8_t> y_buf(y_ptr, w, h);
+        Halide::Runtime::Buffer<uint8_t> uv_buf(uv_ptr, w, h / 2);
+        std::vector<uint8_t> rgb_out(w * h * 3);
+        auto obuf = Halide::Runtime::Buffer<uint8_t>::make_interleaved(
+            rgb_out.data(), w, h, 3);
+        halide_ops::nv21_to_rgb_bt709_fused(y_buf, uv_buf, obuf);
+
+        rgb_to_rgba(rgb_out.data(), (uint8_t*)out_lock.pixels, w, h);
+    } else {
+        cv::Mat nv21_mat(h + h / 2, w, CV_8UC1, (uint8_t*)nv21_ptr);
+        cv::Mat rgb_out;
+        cv::cvtColor(nv21_mat, rgb_out, cv::COLOR_YUV2RGB_NV21);
+        cv::Mat rgba_out;
+        cv::cvtColor(rgb_out, rgba_out, cv::COLOR_RGB2RGBA);
+        rgba_out.copyTo(out_lock.as_opencv_rgba());
+    }
+
+    auto end = Clock::now();
+    env->ReleaseByteArrayElements(nv21Data, nv21_ptr, JNI_ABORT);
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+}
+
+// -----------------------------------------------------------------------
 // Fused NV21 -> Resize -> Pad -> Rotate (ML preprocessing)
 // -----------------------------------------------------------------------
 JNIEXPORT jlong JNICALL

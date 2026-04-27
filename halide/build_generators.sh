@@ -106,6 +106,10 @@ MULTI_TARGET_RUNS=(
     "nv21_to_rgb_full_range_generator -g nv21_to_rgb_full_range -f nv21_to_rgb_full_range"
     # Full-range BT.709 NV21 to RGB (Samsung Camera2 HD+ default on modern Exynos/SDM)
     "nv21_to_rgb_bt709_full_range_generator -g nv21_to_rgb_bt709_full_range -f nv21_to_rgb_bt709_full_range"
+    # Fused NV21 -> YUV444 (nearest UV) -> BT.709 full-range RGB (FLOAT, ~100 dB
+    # PSNR vs TargetOpenCV.cpp). Schedule chosen from an 8-variant on-device
+    # sweep on SM8850 / Exynos 2600 (16-row strips + compute_at U/V).
+    "nv21_to_rgb_bt709_fused_generator -g nv21_to_rgb_bt709_fused -f nv21_to_rgb_bt709_fused"
     # NV21 -> YUV444 (bilinear UV upsample) -> RGB
     "nv21_yuv444_rgb_generator -g nv21_yuv444_rgb -f nv21_yuv444_rgb"
     # Fused NV21 -> Resize -> RGB -> Pad -> Rotate (4 rotation variants)

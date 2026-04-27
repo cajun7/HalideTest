@@ -479,6 +479,13 @@ public class MainActivity extends AppCompatActivity {
                 or.outputBitmap = outputBitmap;
                 break;
             }
+            case "NV21 BT.709 Fused (float)": {
+                byte[] nv21 = getNv21Input(w, h);
+                Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                op = (halide) -> NativeBridge.nv21ToRgbBt709Fused(nv21, w, h, outputBitmap, halide);
+                or.outputBitmap = outputBitmap;
+                break;
+            }
             case "Gaussian Blur (5x5)": {
                 Bitmap outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
                 op = (halide) -> NativeBridge.gaussianBlur(inputBitmap, outputBitmap, 5, halide);

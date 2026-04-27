@@ -58,6 +58,7 @@
 #include "seg_argmax.h"
 #include "nv21_yuv444_rgb.h"
 #include "nv21_to_rgb_full_range.h"
+#include "nv21_to_rgb_bt709_fused.h"
 #include "nv21_resize_pad_rotate_none.h"
 #include "nv21_resize_pad_rotate_90cw.h"
 #include "nv21_resize_pad_rotate_180.h"
@@ -117,6 +118,12 @@ int nv21_to_rgb_full_range(Halide::Runtime::Buffer<uint8_t>& y_plane,
                            Halide::Runtime::Buffer<uint8_t>& uv_plane,
                            Halide::Runtime::Buffer<uint8_t>& output) {
     return ::nv21_to_rgb_full_range(y_plane, uv_plane, output);
+}
+
+int nv21_to_rgb_bt709_fused(Halide::Runtime::Buffer<uint8_t>& y_plane,
+                            Halide::Runtime::Buffer<uint8_t>& uv_plane,
+                            Halide::Runtime::Buffer<uint8_t>& output) {
+    return ::nv21_to_rgb_bt709_fused(y_plane, uv_plane, output);
 }
 
 // ---------------------------------------------------------------------------

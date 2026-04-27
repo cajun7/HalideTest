@@ -24,7 +24,8 @@
         <item>NV21 Resize+RGB BT.709 Nearest (fused)</item>   <!-- 18 -->
         <item>NV21 Resize+RGB BT.709 Bilinear (fused)</item>  <!-- 19 -->
         <item>NV21 Resize+RGB BT.709 Area (fused)</item>      <!-- 20 -->
-        <item>Seg Argmax (8 classes)</item>             <!-- 21 -->
+        <item>NV21 BT.709 Fused (float)</item>                <!-- 21 -->
+        <item>Seg Argmax (8 classes)</item>             <!-- 22 -->
         <item>Seg Portrait Blur (r=8)</item>           <!-- 22 -->
         <item>Seg Background Replace</item>            <!-- 23 -->
         <item>Seg Color Style</item>                   <!-- 24 -->

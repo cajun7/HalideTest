@@ -144,6 +144,14 @@ public class NativeBridge {
                                                   Bitmap outputBitmap, boolean useHalide);
 
     /**
+     * Fused NV21 -> YUV444 (nearest UV) -> BT.709 full-range RGB using FLOAT
+     * math. Matches TargetOpenCV.cpp to ~94-100 dB PSNR (max_diff <= 1 LSB).
+     * @return execution time in microseconds
+     */
+    public static native long nv21ToRgbBt709Fused(byte[] nv21Data, int width, int height,
+                                                   Bitmap outputBitmap, boolean useHalide);
+
+    /**
      * Fused NV21 -> Resize -> Pad -> Rotate for ML preprocessing.
      * Produces a square RGB output (targetSize x targetSize).
      * @param rotationDegreesCW 0, 90, 180, or 270
